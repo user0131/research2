@@ -1,4 +1,8 @@
-// TVのON/OFF切り替え
+// TVInteract - TV操作制御コンポーネント
+// TVオブジェクトにアタッチしてON/OFF切り替え機能を提供
+// MaterialPropertyBlockでメモリリーク防止、buttonTransformで精密距離計算
+// 構成: 1=Core, 2=Public API, 3=表示制御, 4=ユーティリティ
+
 using UnityEngine;
 
 public class TVInteract : MonoBehaviour
@@ -13,74 +17,49 @@ public class TVInteract : MonoBehaviour
     public Material offMaterial; // 消えた時のマテリアル
     
     [Header("Button Settings")]
-    public Transform buttonTransform; // TVのボタンの位置
+    public Transform buttonTransform; // TVのボタンの位置（精密な距離計算用）
     
-    private bool isOn = false;
-    private Renderer screenRenderer;
+    // 状態管理
+    private bool _isOn = false;
     
+    // コンポーネント参照
+    private Renderer _screenRenderer;
+    
+    // MaterialPropertyBlock（メモリリーク防止）
+    private MaterialPropertyBlock _propertyBlock;
+    private static readonly int ColorID = Shader.PropertyToID("_Color");
+    private static readonly int EmissionColorID = Shader.PropertyToID("_EmissionColor");
+    
+    #region 1. Core Lifecycle
     void Start()
     {
-        // Screenオブジェクトのレンダラーを取得
-        if (screenObject != null)
-        {
-            screenRenderer = screenObject.GetComponent<Renderer>();
-        }
-        else
-        {
-            // screenObjectが設定されていない場合、子オブジェクトから探す
-            screenRenderer = GetComponentInChildren<Renderer>();
-        }
-        
-        // 初期状態を設定
-        SetScreenState(false);
+        InitializeComponents();
+        InitializePropertyBlock();
+        SetInitialState();
     }
+    #endregion
     
+    #region 2. Public API
+    /// <summary>
+    /// TV状態の切り替え（PlayerInteractionControllerから呼ばれる）
+    /// </summary>
     public void ToggleTV()
     {
-        isOn = !isOn;
-        SetScreenState(isOn);
-        
+        _isOn = !_isOn;
+        SetScreenState(_isOn);
     }
     
-    private void SetScreenState(bool turnOn)
-    {
-        if (screenRenderer == null) return;
-        
-        if (turnOn)
-        {
-            // TVを点ける
-            if (onMaterial != null)
-            {
-                screenRenderer.material = onMaterial;
-            }
-            else
-            {
-                // マテリアルが設定されていない場合、色を変更
-                screenRenderer.material.color = Color.white;
-                screenRenderer.material.SetColor("_EmissionColor", Color.white);
-            }
-        }
-        else
-        {
-            // TVを消す
-            if (offMaterial != null)
-            {
-                screenRenderer.material = offMaterial;
-            }
-            else
-            {
-                // マテリアルが設定されていない場合、色を変更
-                screenRenderer.material.color = Color.black;
-                screenRenderer.material.SetColor("_EmissionColor", Color.black);
-            }
-        }
-    }
-    
+    /// <summary>
+    /// 現在のTV状態を取得
+    /// </summary>
     public bool IsOn()
     {
-        return isOn;
+        return _isOn;
     }
     
+    /// <summary>
+    /// ボタンの位置を取得（距離計算用）
+    /// </summary>
     public Vector3 GetButtonPosition()
     {
         if (buttonTransform != null)
@@ -93,4 +72,97 @@ public class TVInteract : MonoBehaviour
             return transform.position;
         }
     }
+    #endregion
+
+    #region 3. 表示制御システム
+    /// <summary>
+    /// スクリーンの表示状態を設定
+    /// </summary>
+    private void SetScreenState(bool turnOn)
+    {
+        if (_screenRenderer == null) return;
+        
+        if (turnOn)
+        {
+            SetScreenOn();
+        }
+        else
+        {
+            SetScreenOff();
+        }
+    }
+    
+    /// <summary>
+    /// スクリーンをON状態に設定
+    /// </summary>
+    private void SetScreenOn()
+    {
+        if (onMaterial != null)
+        {
+            // 専用マテリアルが設定されている場合はそれを使用
+            _screenRenderer.material = onMaterial;
+        }
+        else
+        {
+            // マテリアルが未設定の場合、MaterialPropertyBlockで色変更（メモリリークなし）
+            _propertyBlock.SetColor(ColorID, Color.white);
+            _propertyBlock.SetColor(EmissionColorID, Color.white);
+            _screenRenderer.SetPropertyBlock(_propertyBlock);
+        }
+    }
+    
+    /// <summary>
+    /// スクリーンをOFF状態に設定
+    /// </summary>
+    private void SetScreenOff()
+    {
+        if (offMaterial != null)
+        {
+            // 専用マテリアルが設定されている場合はそれを使用
+            _screenRenderer.material = offMaterial;
+        }
+        else
+        {
+            // マテリアルが未設定の場合、MaterialPropertyBlockで色変更（メモリリークなし）
+            _propertyBlock.SetColor(ColorID, Color.black);
+            _propertyBlock.SetColor(EmissionColorID, Color.black);
+            _screenRenderer.SetPropertyBlock(_propertyBlock);
+        }
+    }
+    #endregion
+
+    #region 4. ユーティリティメソッド
+    /// <summary>
+    /// コンポーネントの初期化
+    /// </summary>
+    private void InitializeComponents()
+    {
+        // Screenオブジェクトのレンダラーを取得
+        if (screenObject != null)
+        {
+            _screenRenderer = screenObject.GetComponent<Renderer>();
+        }
+        else
+        {
+            // screenObjectが設定されていない場合、子オブジェクトから探す
+            _screenRenderer = GetComponentInChildren<Renderer>();
+        }
+    }
+    
+    /// <summary>
+    /// MaterialPropertyBlockの初期化
+    /// </summary>
+    private void InitializePropertyBlock()
+    {
+        _propertyBlock = new MaterialPropertyBlock();
+    }
+    
+    /// <summary>
+    /// 初期状態の設定
+    /// </summary>
+    private void SetInitialState()
+    {
+        SetScreenState(false);
+    }
+    #endregion
 } 
