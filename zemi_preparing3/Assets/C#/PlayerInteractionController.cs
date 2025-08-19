@@ -32,6 +32,16 @@ public class PlayerInteractionController : MonoBehaviour
     {
         // コンポーネント取得
         input = GetComponent<StarterAssetsInputs>();
+        if (input == null)
+        {
+            // PlayerArmatureから取得を試行
+            input = FindFirstObjectByType<StarterAssetsInputs>();
+        }
+        
+        if (input == null)
+        {
+            Debug.LogError("[PlayerInteractionController] StarterAssetsInputs not found!");
+        }
         
         // キャリーポジション初期化
         InitializeCarryPosition();

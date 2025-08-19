@@ -39,7 +39,6 @@ public class LLMCommunicator : MonoBehaviour
     private CommandExecutor commandExecutor;
     private AccessibilityNarrator logManager;
     private bool isProcessingRequest = false;
-    private bool isExecutingCommand = false;
     
     public static LLMCommunicator Instance;
 
@@ -89,8 +88,6 @@ public class LLMCommunicator : MonoBehaviour
     /// </summary>
     public void OnCommandCompleted()
     {
-        isExecutingCommand = false;
-        
         if (enableDebugLogs)
         {
             Debug.Log("[LLMCommunicator] コマンド実行完了 - ログ収集開始");
@@ -140,8 +137,7 @@ public class LLMCommunicator : MonoBehaviour
                         // コマンド実行時にタスク情報も表示(デバッグ用)
                         Debug.Log($"[LLM] {response.command} コマンドを実行 | タスク: {response.current_task}");
                         
-                        // コマンド実行開始
-                        isExecutingCommand = true;
+                        // コマンド実行開始（CommandExecutorで状態管理）
                         
                         // 座標移動コマンドの場合、座標情報を使用
                         if (response.command == "navigate" && response.x.HasValue && response.y.HasValue && response.z.HasValue)
@@ -205,7 +201,6 @@ public class LLMCommunicator : MonoBehaviour
         if (commandExecutor == null)
         {
             Debug.LogError("[LLMCommunicator] CommandExecutor が見つかりません");
-            isExecutingCommand = false;
             return;
         }
         
@@ -238,11 +233,9 @@ public class LLMCommunicator : MonoBehaviour
                 break;
             case "wait":
                 commandExecutor.ExecuteCommand("wait");
-                isExecutingCommand = false; // waitコマンドは即座に完了
                 break;
             default:
                 Debug.LogWarning($"[LLMCommunicator] 不明なコマンド: {command} (正規化後: {normalizedCommand})");
-                isExecutingCommand = false;
                 break;
         }
     }

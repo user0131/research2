@@ -31,7 +31,6 @@ public class AccessibilityNarrator : MonoBehaviour
     
     // アクションログ管理
     private List<string> actionLogs = new List<string>();
-    private bool hasNewActionData = false;
 
     #region 1. Core lifecycle & setup
     void Awake()
@@ -172,7 +171,6 @@ public class AccessibilityNarrator : MonoBehaviour
         
         string actionMessage = $"{displayName}を持ち上げました！pickupコマンドで置くことができます。";
         actionLogs.Add(actionMessage);
-        hasNewActionData = true;
         
         if (enableDebugOutput)
         {
@@ -199,7 +197,6 @@ public class AccessibilityNarrator : MonoBehaviour
         
         string actionMessage = $"{displayName}を置きました！場所: {dropLocationDetails}";
         actionLogs.Add(actionMessage);
-        hasNewActionData = true;
         
         if (enableDebugOutput)
         {
@@ -243,7 +240,6 @@ public class AccessibilityNarrator : MonoBehaviour
         string stateText = isOn ? "ON" : "OFF";
         string actionMessage = $"{deviceName}を{stateText}にしました！";
         actionLogs.Add(actionMessage);
-        hasNewActionData = true;
         
         if (enableDebugOutput)
         {
@@ -401,7 +397,6 @@ public class AccessibilityNarrator : MonoBehaviour
             actionInfo.AddRange(actionLogs);
             // 取得後にクリア（次回は新しいアクションのみ）
             actionLogs.Clear();
-            hasNewActionData = false;
         }
         
         return actionInfo;
