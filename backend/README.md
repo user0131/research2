@@ -103,27 +103,8 @@ GET /api/logs/progress
 ### ログファイルの保存場所
 ログは `game_logs.json` ファイルに保存されます。
 
-### ログクリアの方法
 
-#### 1. APIエンドポイントを使用（推奨）
-```bash
-# cURLを使用
-curl -X POST http://localhost:5000/api/logs/clear
-
-# または、Dockerコンテナが起動している場合
-docker-compose exec backend curl -X POST http://localhost:5000/api/logs/clear
-```
-
-#### 2. ファイルを直接削除
-```bash
-# ログファイルを削除
-rm game_logs.json
-
-# または、Dockerコンテナ内で削除
-docker-compose exec backend rm game_logs.json
-```
-
-#### 3. Dockerコンテナを再起動
+#### Dockerコンテナを再起動
 ```bash
 # コンテナを停止して再起動（データをクリア）
 docker-compose down
