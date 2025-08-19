@@ -1,0 +1,205 @@
+"""
+ステップマネージャー
+タスクから生成されたステップの管理とライフサイクルを制御
+"""
+
+import json
+import uuid
+import logging
+from datetime import datetime
+from typing import List, Dict, Optional
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+class StepStatus(Enum):
+    PENDING = "pending"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class StepManager:
+    def __init__(self):
+        """ステップマネージャーの初期化"""
+        self.steps: List[Dict] = []
+        self.current_step_id: Optional[str] = None
+        
+    def add_steps(self, task_id: str, steps: List[Dict]) -> List[str]:
+        """
+        タスクから生成されたステップをキューに追加
+        
+        Args:
+            task_id: タスクID
+            steps: ステップリスト
+            
+        Returns:
+            追加されたステップのIDリスト
+        """
+        step_ids = []
+        
+        for i, step in enumerate(steps):
+            step_id = str(uuid.uuid4())
+            step_data = {
+                "id": step_id,
+                "task_id": task_id,
+                "order": i,
+                "status": StepStatus.PENDING.value,
+                "command": step.get("command"),
+                "parameters": step.get("parameters", {}),
+                "description": step.get("description", ""),
+                "created_at": datetime.now().isoformat(),
+                "started_at": None,
+                "completed_at": None,
+                "error_message": None
+            }
+            
+            self.steps.append(step_data)
+            step_ids.append(step_id)
+            
+        logger.info(f"Added {len(steps)} steps for task {task_id}")
+        return step_ids
+    
+    def get_next_step(self) -> Optional[Dict]:
+        """
+        実行すべき次のステップを取得
+        
+        Returns:
+            次のステップ、またはNone
+        """
+        # PENDING状態のステップを順序順に探す
+        pending_steps = [
+            step for step in self.steps 
+            if step["status"] == StepStatus.PENDING.value
+        ]
+        
+        if not pending_steps:
+            return None
+            
+        # 最も早い順序のステップを選択
+        next_step = min(pending_steps, key=lambda x: (x["task_id"], x["order"]))
+        
+        # ステップを実行中状態に変更
+        next_step["status"] = StepStatus.EXECUTING.value
+        next_step["started_at"] = datetime.now().isoformat()
+        self.current_step_id = next_step["id"]
+        
+        logger.info(f"Starting step {next_step['id']}: {next_step['description']}")
+        return next_step
+    
+    def complete_step(self, step_id: str) -> bool:
+        """
+        ステップを完了状態にマーク
+        
+        Args:
+            step_id: ステップID
+            
+        Returns:
+            成功した場合True
+        """
+        for step in self.steps:
+            if step["id"] == step_id:
+                step["status"] = StepStatus.COMPLETED.value
+                step["completed_at"] = datetime.now().isoformat()
+                
+                if self.current_step_id == step_id:
+                    self.current_step_id = None
+                
+                logger.info(f"Completed step {step_id}")
+                return True
+        
+        logger.warning(f"Step {step_id} not found for completion")
+        return False
+    
+    def fail_step(self, step_id: str, error_message: str) -> bool:
+        """
+        ステップを失敗状態にマーク
+        
+        Args:
+            step_id: ステップID
+            error_message: エラーメッセージ
+            
+        Returns:
+            成功した場合True
+        """
+        for step in self.steps:
+            if step["id"] == step_id:
+                step["status"] = StepStatus.FAILED.value
+                step["error_message"] = error_message
+                step["completed_at"] = datetime.now().isoformat()
+                
+                if self.current_step_id == step_id:
+                    self.current_step_id = None
+                
+                logger.error(f"Failed step {step_id}: {error_message}")
+                return True
+        
+        logger.warning(f"Step {step_id} not found for failure")
+        return False
+    
+    def get_step(self, step_id: str) -> Optional[Dict]:
+        """
+        指定されたIDのステップを取得
+        
+        Args:
+            step_id: ステップID
+            
+        Returns:
+            ステップデータ、またはNone
+        """
+        for step in self.steps:
+            if step["id"] == step_id:
+                return step
+        return None
+    
+    def get_task_steps(self, task_id: str) -> List[Dict]:
+        """
+        指定されたタスクの全ステップを取得
+        
+        Args:
+            task_id: タスクID
+            
+        Returns:
+            ステップリスト
+        """
+        return [step for step in self.steps if step["task_id"] == task_id]
+    
+    def get_queue_status(self) -> Dict:
+        """
+        キューの状態を取得
+        
+        Returns:
+            キューの状態情報
+        """
+        status_counts = {}
+        for status in StepStatus:
+            status_counts[status.value] = len([
+                s for s in self.steps if s["status"] == status.value
+            ])
+        
+        return {
+            "total_steps": len(self.steps),
+            "status_counts": status_counts,
+            "current_step_id": self.current_step_id,
+            "has_pending_steps": status_counts[StepStatus.PENDING.value] > 0
+        }
+    
+    def clear_completed_steps(self):
+        """完了したステップをクリア"""
+        initial_count = len(self.steps)
+        self.steps = [
+            step for step in self.steps 
+            if step["status"] not in [StepStatus.COMPLETED.value, StepStatus.FAILED.value]
+        ]
+        cleared_count = initial_count - len(self.steps)
+        
+        if cleared_count > 0:
+            logger.info(f"Cleared {cleared_count} completed/failed steps")
+    
+    def clear_all_steps(self):
+        """全ステップをクリア"""
+        self.steps.clear()
+        self.current_step_id = None
+        logger.info("Cleared all steps")
+
+# グローバルステップマネージャーインスタンス
+step_manager = StepManager()

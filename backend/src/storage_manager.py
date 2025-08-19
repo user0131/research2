@@ -1,20 +1,21 @@
 """
-統合ストレージシステム
+ストレージマネージャー
 ゲームログと実行コマンドの一元管理
 """
 
 import json
 import os
 import logging
+import uuid
 from datetime import datetime
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-class Storage:
+class StorageManager:
     def __init__(self, storage_dir: str = "storage"):
         """
-        統合ストレージの初期化
+        ストレージマネージャーの初期化
         
         Args:
             storage_dir: ストレージディレクトリのパス
@@ -280,5 +281,5 @@ class Storage:
                 'error': str(e)
             }
 
-# グローバルストレージインスタンス
-storage = Storage()
+# グローバルストレージマネージャーインスタンス
+storage_manager = StorageManager()

@@ -20,6 +20,30 @@ DEPENDENCIES = {
     "finish": ["tv_switch", "chair_move", "put_pc_on_plate"]  # TV switch、Chair Move、Put PC on Plateの全てが完了
 }
 
+# 利用可能なコマンド
+AVAILABLE_COMMANDS = {
+    "navigate": {
+        "description": "指定座標への移動",
+        "parameters": ["x", "y", "z"],
+        "usage": "navigate: 座標(x, y, z)を指定してその位置に移動する"
+    },
+    "pickup": {
+        "description": "アイテムの拾い上げ/設置",
+        "parameters": [],
+        "usage": "pickup: アイテムに隣接している場合、拾い上げる。アイテムを持っている場合、設置する"
+    },
+    "interact": {
+        "description": "オブジェクトとの相互作用",
+        "parameters": [],
+        "usage": "interact: テレビなどのオブジェクトに隣接している場合、相互作用する（電源ON/OFFなど）"
+    },
+    "wait": {
+        "description": "待機",
+        "parameters": [],
+        "usage": "wait: 何もせずに待機する"
+    }
+}
+
 # タスク実行例（Few-shot prompting用）
 TASK_EXAMPLES = {
     "tv_switch": {
@@ -172,4 +196,12 @@ def get_task_examples():
 
 def get_task_example(task_id):
     """特定のタスクの実行例を取得"""
-    return TASK_EXAMPLES.get(task_id, {"description": "未知のタスク", "steps": [], "example_sequence": [], "completion_criteria": "不明"})
+    return TASK_EXAMPLES.get(task_id, {"description": "未知のタスク", "steps": [], "example_command_sequence": []})
+
+def get_available_commands():
+    """利用可能なコマンドを取得"""
+    return AVAILABLE_COMMANDS
+
+def get_command_info(command_name):
+    """特定のコマンドの情報を取得"""
+    return AVAILABLE_COMMANDS.get(command_name, {"description": "未知のコマンド", "parameters": [], "usage": "使用方法不明"})
