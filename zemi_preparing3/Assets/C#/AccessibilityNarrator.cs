@@ -20,7 +20,7 @@ public class AccessibilityNarrator : MonoBehaviour
     public bool enableDebugOutput = false; // デバッグ用の自動ログ出力
     
     private Camera playerCamera;
-    private PlayerPickupController pickupController;
+    private PlayerInteractionController interactionController;
     
     // シングルトンインスタンス
     public static AccessibilityNarrator Instance;
@@ -72,8 +72,8 @@ public class AccessibilityNarrator : MonoBehaviour
             playerCamera = FindFirstObjectByType<Camera>();
         }
         
-        // プレイヤーのPickupControllerを取得
-        pickupController = GetComponent<PlayerPickupController>();
+        // プレイヤーのInteractionControllerを取得
+        interactionController = GetComponent<PlayerInteractionController>();
     }
 
     /// <summary>
@@ -220,7 +220,7 @@ public class AccessibilityNarrator : MonoBehaviour
         lastNearbyItem = currentItem;
         
         // 方角を計算（必要に応じて利用）
-        ItemPickup nearbyItem = pickupController?.currentNearbyItem;
+        ItemPickup nearbyItem = interactionController?.CurrentNearbyItem;
         if (nearbyItem != null)
         {
             Vector3 directionVector = (nearbyItem.transform.position - transform.position).normalized;
@@ -265,7 +265,7 @@ public class AccessibilityNarrator : MonoBehaviour
         lastNearbyTV = currentTV;
         
         // 方角を計算（必要に応じて利用）
-        TVInteract nearbyTV = pickupController?.currentNearbyTV;
+        TVInteract nearbyTV = interactionController?.CurrentNearbyTV;
         if (nearbyTV != null)
         {
             Vector3 directionVector = (nearbyTV.GetButtonPosition() - transform.position).normalized;
@@ -321,9 +321,9 @@ public class AccessibilityNarrator : MonoBehaviour
         
         // 持っているもの
         situationData.Add("[持っているもの]");
-        if (pickupController != null && pickupController.carriedItem != null)
+        if (interactionController != null && interactionController.CarriedItem != null)
         {
-            situationData.Add(pickupController.carriedItem.itemName);
+            situationData.Add(interactionController.CarriedItem.itemName);
         }
         else
         {
@@ -335,25 +335,25 @@ public class AccessibilityNarrator : MonoBehaviour
         List<string> commands = GetAvailableMovementCommands();
         
         // アイテム関連のコマンド
-        if (pickupController != null && pickupController.currentNearbyItem != null && pickupController.carriedItem == null)
+        if (interactionController != null && interactionController.CurrentNearbyItem != null && interactionController.CarriedItem == null)
         {
-            string itemName = pickupController.currentNearbyItem.itemName;
+            string itemName = interactionController.CurrentNearbyItem.itemName;
             if (itemName == "Dai") itemName = "PCプレート";
             commands.Add($"pickup（{itemName}を拾う）");
         }
         
         // ドロップコマンド
-        if (pickupController != null && pickupController.carriedItem != null)
+        if (interactionController != null && interactionController.CarriedItem != null)
         {
             string dropInfo = GetDropLocationInfo();
             commands.Add(dropInfo);
         }
         
         // TV操作コマンド
-        if (pickupController != null && pickupController.currentNearbyTV != null)
+        if (interactionController != null && interactionController.CurrentNearbyTV != null)
         {
-            string tvState = pickupController.currentNearbyTV.IsOn() ? "ON" : "OFF";
-            commands.Add($"interact（{pickupController.currentNearbyTV.deviceName}を操作・現在{tvState}）");
+            string tvState = interactionController.CurrentNearbyTV.IsOn() ? "ON" : "OFF";
+            commands.Add($"interact（{interactionController.CurrentNearbyTV.deviceName}を操作・現在{tvState}）");
         }
         
         if (commands.Count > 0)
@@ -522,9 +522,9 @@ public class AccessibilityNarrator : MonoBehaviour
     private void CheckAreaArrivalForLog(List<string> messages)
     {
         Vector3 currentPosition = transform.position;
-        PlayerPickupController pickup = GetComponent<PlayerPickupController>();
-        bool hasItem = pickup != null && pickup.carriedItem != null;
-        string heldItemName = hasItem ? pickup.carriedItem.itemName : "";
+        PlayerInteractionController interaction = GetComponent<PlayerInteractionController>();
+        bool hasItem = interaction != null && interaction.CarriedItem != null;
+        string heldItemName = hasItem ? interaction.CarriedItem.itemName : "";
         
         // ChairArea到達チェック（椅子を持っている場合）
         if (heldItemName.Contains("Chair") || heldItemName.Contains("椅子"))
@@ -565,12 +565,12 @@ public class AccessibilityNarrator : MonoBehaviour
     /// </summary>
     private void CheckNearbyItemsForLog(List<string> messages)
     {
-        if (pickupController != null && pickupController.currentNearbyItem != null && pickupController.carriedItem == null)
+        if (interactionController != null && interactionController.CurrentNearbyItem != null && interactionController.CarriedItem == null)
         {
-            string itemName = pickupController.currentNearbyItem.itemName;
-            float distance = Vector3.Distance(transform.position, pickupController.currentNearbyItem.transform.position);
+            string itemName = interactionController.CurrentNearbyItem.itemName;
+            float distance = Vector3.Distance(transform.position, interactionController.CurrentNearbyItem.transform.position);
             
-            Vector3 directionVector = (pickupController.currentNearbyItem.transform.position - transform.position).normalized;
+            Vector3 directionVector = (interactionController.CurrentNearbyItem.transform.position - transform.position).normalized;
             string direction = GetDirectionText(directionVector);
             
             string displayName = itemName == "Dai" ? "PCプレート" : itemName;
@@ -583,13 +583,13 @@ public class AccessibilityNarrator : MonoBehaviour
     /// </summary>
     private void CheckNearbyTVsForLog(List<string> messages)
     {
-        if (pickupController != null && pickupController.currentNearbyTV != null)
+        if (interactionController != null && interactionController.CurrentNearbyTV != null)
         {
-            string deviceName = pickupController.currentNearbyTV.deviceName;
-            bool isOn = pickupController.currentNearbyTV.IsOn();
-            float distance = Vector3.Distance(transform.position, pickupController.currentNearbyTV.GetButtonPosition());
+            string deviceName = interactionController.CurrentNearbyTV.deviceName;
+            bool isOn = interactionController.CurrentNearbyTV.IsOn();
+            float distance = Vector3.Distance(transform.position, interactionController.CurrentNearbyTV.GetButtonPosition());
             
-            Vector3 directionVector = (pickupController.currentNearbyTV.GetButtonPosition() - transform.position).normalized;
+            Vector3 directionVector = (interactionController.CurrentNearbyTV.GetButtonPosition() - transform.position).normalized;
             string direction = GetDirectionText(directionVector);
             
             string stateText = isOn ? "ON" : "OFF";
@@ -1154,7 +1154,7 @@ public class AccessibilityNarrator : MonoBehaviour
         }
         
         // ドロップ位置の予測を表示
-        if (pickupController != null && pickupController.carriedItem != null)
+        if (interactionController != null && interactionController.CarriedItem != null)
         {
             Vector3 dropPosition = transform.position + transform.forward * 1.5f;
             Gizmos.color = Color.green;

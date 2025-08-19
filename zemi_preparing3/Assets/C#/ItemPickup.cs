@@ -51,11 +51,6 @@ public class ItemPickup : MonoBehaviour
         transform.localPosition = new Vector3(0, 0.1f, 0.1f);
         transform.localRotation = Quaternion.identity;
         
-        // Narratorにイベントを通知
-        if (AccessibilityNarrator.Instance != null)
-        {
-            AccessibilityNarrator.Instance.OnItemPickedUp(itemName);
-        }
     }
     
     public void Drop()
@@ -81,11 +76,6 @@ public class ItemPickup : MonoBehaviour
             col.enabled = true;
         }
         
-        // Narratorにイベントを通知
-        if (AccessibilityNarrator.Instance != null)
-        {
-            AccessibilityNarrator.Instance.OnItemDropped(itemName, transform.position);
-        }
     }
     
     public bool IsPickedUp()

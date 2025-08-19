@@ -40,11 +40,6 @@ public class TVInteract : MonoBehaviour
         isOn = !isOn;
         SetScreenState(isOn);
         
-        // Narratorにイベントを通知
-        if (AccessibilityNarrator.Instance != null)
-        {
-            AccessibilityNarrator.Instance.OnTVToggled(deviceName, isOn);
-        }
     }
     
     private void SetScreenState(bool turnOn)

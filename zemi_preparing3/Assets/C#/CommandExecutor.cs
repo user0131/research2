@@ -10,7 +10,7 @@ public class CommandExecutor : MonoBehaviour
 {
     [Header("Dependencies")]
     public StarterAssetsInputs inputSystem; // 人間と同じ入力システム
-    public PlayerPickupController pickupController; // アイテム操作
+    public PlayerInteractionController interactionController; // アイテム操作
     public NavMeshAgentController navMeshController; // AI専用の座標移動。目的地まで移動を遂行する（内部でNavMeshAgentを使用している）
     
     [Header("Movement Settings")]
@@ -29,14 +29,14 @@ public class CommandExecutor : MonoBehaviour
         if (inputSystem == null)
             inputSystem = GetComponent<StarterAssetsInputs>();
         
-        if (pickupController == null)
-            pickupController = GetComponent<PlayerPickupController>();
+        if (interactionController == null)
+            interactionController = GetComponent<PlayerInteractionController>();
         
         if (navMeshController == null)
             navMeshController = GetComponent<NavMeshAgentController>();
         
         // 必須コンポーネントのチェック
-        if (inputSystem == null || pickupController == null)
+        if (inputSystem == null || interactionController == null)
         {
             Debug.LogError("[CommandExecutor] Required components not found!");
         }
