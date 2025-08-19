@@ -133,7 +133,7 @@ public class LLMCommunicator : MonoBehaviour
                 
                 try
                 {
-                    CommandResponse response = JsonUtility.FromJson<CommandResponse>(responseText);
+                    CommandResponse response = JsonUtility.FromJson<CommandResponse>(responseText); // TODO: 戻り値について、内容をbackend修正時に再構成する必要あり。
                     
                     if (response.success && !string.IsNullOrEmpty(response.command))
                     {
