@@ -1,3 +1,4 @@
+// 拾えるアイテムを定義し、拾い上げ時の挙動や処理を制御
 using UnityEngine;
 
 public class ItemPickup : MonoBehaviour

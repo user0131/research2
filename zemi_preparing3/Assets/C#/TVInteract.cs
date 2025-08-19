@@ -1,3 +1,4 @@
+// TVのON/OFF切り替え
 using UnityEngine;
 
 public class TVInteract : MonoBehaviour

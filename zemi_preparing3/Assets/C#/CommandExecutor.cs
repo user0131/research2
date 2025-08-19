@@ -1,3 +1,12 @@
+// コマンド実行クラス
+// - 移動（north/south/east/west）、pickup、interact、navigate:x,y,z コマンドを実行
+// - StarterAssetsInputsを通じてプレイヤーを操作
+
+// - PlayerPickupControllerを通じてアイテムを拾う
+// - NavMeshAgentControllerを通じて目的地に移動
+
+// - コマンド実行中かどうかを確認
+// - コマンド実行中の場合は、コマンドを実行しない
 using UnityEngine;
 using StarterAssets;
 using System.Collections;
@@ -7,6 +16,7 @@ public class CommandExecutor : MonoBehaviour
     [Header("Dependencies")]
     public StarterAssetsInputs inputSystem;
     public PlayerPickupController pickupController;
+    public NavMeshAgentController navMeshController;
     
     [Header("Movement Settings")]
     public float movementDistance = 0.5f; // 移動コマンドの移動距離（単位）
@@ -28,6 +38,11 @@ public class CommandExecutor : MonoBehaviour
         if (pickupController == null)
         {
             pickupController = GetComponent<PlayerPickupController>();
+        }
+        
+        if (navMeshController == null)
+        {
+            navMeshController = GetComponent<NavMeshAgentController>();
         }
         
         if (inputSystem == null || pickupController == null)
@@ -56,6 +71,12 @@ public class CommandExecutor : MonoBehaviour
     private IEnumerator ExecuteCommandCoroutine(string command, string reasoning)
     {
         isExecutingCommand = true;
+        
+        // コマンド開始をAccessibilityNarratorに通知（ログ出力停止）
+        if (AccessibilityNarrator.Instance != null)
+        {
+            AccessibilityNarrator.Instance.OnCommandStarted();
+        }
         
         // 簡潔なログのみ出力
         if (enableDebugLogs)
@@ -88,7 +109,12 @@ public class CommandExecutor : MonoBehaviour
                 yield return ExecuteWait();
                 break;
             default:
-                if (enableDebugLogs)
+                // navigate:x,y,z形式のコマンドをチェック
+                if (command.StartsWith("navigate:"))
+                {
+                    yield return ExecuteNavigateToPosition(command.Substring(9));
+                }
+                else if (enableDebugLogs)
                 {
                     Debug.LogWarning($"[CommandExecutor] Unknown command: {command}");
                 }
@@ -204,6 +230,59 @@ public class CommandExecutor : MonoBehaviour
         }
         
         Debug.Log("[CommandExecutor] 待機完了");
+    }
+    
+    private IEnumerator ExecuteNavigateToPosition(string positionString)
+    {
+        if (navMeshController == null)
+        {
+            if (enableDebugLogs)
+            {
+                Debug.LogError("[CommandExecutor] NavMeshAgentController not found!");
+            }
+            yield break;
+        }
+        
+        // 座標文字列をパース (例: "10,0,5")
+        string[] coords = positionString.Split(',');
+        if (coords.Length != 3)
+        {
+            if (enableDebugLogs)
+            {
+                Debug.LogError($"[CommandExecutor] Invalid position format: {positionString}");
+            }
+            yield break;
+        }
+        
+        if (float.TryParse(coords[0], out float x) &&
+            float.TryParse(coords[1], out float y) &&
+            float.TryParse(coords[2], out float z))
+        {
+            if (enableDebugLogs)
+            {
+                Debug.Log($"[CommandExecutor] Navigating to position: ({x}, {y}, {z})");
+            }
+            
+            navMeshController.NavigateToPosition(x, y, z);
+            
+            // ナビゲーションが完了するまで待機
+            while (navMeshController.IsNavigating())
+            {
+                yield return new WaitForSeconds(0.1f);
+            }
+            
+            if (enableDebugLogs)
+            {
+                Debug.Log("[CommandExecutor] Navigation completed");
+            }
+        }
+        else
+        {
+            if (enableDebugLogs)
+            {
+                Debug.LogError($"[CommandExecutor] Failed to parse position: {positionString}");
+            }
+        }
     }
     
     /// <summary>

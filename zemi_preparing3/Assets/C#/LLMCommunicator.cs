@@ -1,3 +1,5 @@
+// LLMCommunicatorクラス - 統一通信窓口・コマンド配送
+// 構成: 1=Core, 2=Public API, 3=Backend通信, 4=コマンド処理, 5=ユーティリティ
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -19,6 +21,10 @@ public class CommandResponse
     public bool success;
     public string current_task;
     public string progress;
+    // 座標移動用の追加フィールド
+    public float? x;
+    public float? y;
+    public float? z;
 }
 
 public class LLMCommunicator : MonoBehaviour
@@ -31,13 +37,13 @@ public class LLMCommunicator : MonoBehaviour
     public bool enableDebugLogs = true;
     
     private CommandExecutor commandExecutor;
+    private AccessibilityNarrator logManager;
     private bool isProcessingRequest = false;
     private bool isExecutingCommand = false;
-    private List<string> latestSituationLogs = new List<string>();
-    private bool hasPendingSituation = false;
     
     public static LLMCommunicator Instance;
-    
+
+    #region 1. Core lifecycle & setup
     void Awake()
     {
         if (Instance == null)
@@ -59,89 +65,46 @@ public class LLMCommunicator : MonoBehaviour
             Debug.LogError("[LLMCommunicator] CommandExecutor not found!");
         }
         
-        // アプリケーションログを監視
-        Application.logMessageReceived += OnLogReceived;
+        logManager = AccessibilityNarrator.Instance;
+        if (logManager == null)
+        {
+            Debug.LogError("[LLMCommunicator] AccessibilityNarrator not found!");
+        }
         
-        // 起動ログを削除（簡潔に）
+        if (enableDebugLogs)
+        {
+            Debug.Log("[LLMCommunicator] ログ管理システムを開始しました（コマンド完了時のみ送信）");
+        }
     }
     
     void OnDestroy()
     {
-        Application.logMessageReceived -= OnLogReceived;
+        StopAllCoroutines();
     }
-    
-    private void OnLogReceived(string logString, string stackTrace, LogType type)
+    #endregion
+
+    #region 2. Public API
+    /// <summary>
+    /// コマンド実行完了時に呼び出される（コマンド完了時のみログ送信）
+    /// </summary>
+    public void OnCommandCompleted()
     {
-        // [Narrator] === 現在の状況 === を検出
-        if (logString.Contains("[Narrator] === 現在の状況 ==="))
-        {
-            // 新しい状況ログの開始を検出
-            latestSituationLogs.Clear();
-            latestSituationLogs.Add(logString);
-            hasPendingSituation = true;
-            return;
-        }
+        isExecutingCommand = false;
         
-        // 状況ログを蓄積中の場合、ログを追加
-        if (hasPendingSituation && logString.StartsWith("["))
-        {
-            latestSituationLogs.Add(logString);
-            
-            // [可能なコマンド] が来たら状況ログ完了として判定
-            if (logString.Contains("[可能なコマンド]"))
-            {
-                // コマンド実行中でなければ即座に送信
-                if (!isExecutingCommand)
-                {
-                    ProcessLatestSituation();
-                }
-            }
-        }
-        
-        // コマンド実行完了を検出
-        if (logString.Contains("コマンド実行完了") || 
-            logString.Contains("移動完了") || 
-            logString.Contains("アクション完了") ||
-            logString.Contains("[Narrator] コマンド実行完了") ||
-            logString.Contains("を持ち上げました！") ||
-            logString.Contains("を置きました！") ||
-            logString.Contains("にしました！"))
-        {
-            isExecutingCommand = false;
-            
-            // コマンド実行完了後に最新の状況ログを送信
-            if (hasPendingSituation && latestSituationLogs.Count > 0)
-            {
-                ProcessLatestSituation();
-            }
-        }
-    }
-    
-    private void ProcessLatestSituation()
-    {
-        if (isProcessingRequest || isExecutingCommand)
-        {
-            // 処理中またはコマンド実行中の場合は送信しない
-            return;
-        }
-        
-        if (latestSituationLogs.Count == 0)
-        {
-            return;
-        }
-        
-        // 重要な情報のみログ出力
         if (enableDebugLogs)
         {
-            Debug.Log($"[LLMCommunicator] 最新状況を送信中（{latestSituationLogs.Count}件のログ）");
+            Debug.Log("[LLMCommunicator] コマンド実行完了 - ログ収集開始");
         }
         
-        // 最新状況をコピーして送信
-        List<string> logsToSend = new List<string>(latestSituationLogs);
-        hasPendingSituation = false;
-        
-        StartCoroutine(SendLogsToBackend(logsToSend));
+        // AccessibilityNarratorにログ収集を依頼
+        if (logManager != null && !isProcessingRequest)
+        {
+            RequestSituationLogs();
+        }
     }
+    #endregion
+
+    #region 3. Backend通信
     
     private IEnumerator SendLogsToBackend(List<string> logs)
     {
@@ -174,14 +137,23 @@ public class LLMCommunicator : MonoBehaviour
                     
                     if (response.success && !string.IsNullOrEmpty(response.command))
                     {
-                        // コマンド実行時にタスク情報も表示
-                        Debug.Log($"[LLM] {response.command} コマンドを実行 | タスク: {response.current_task} | 進捗: {response.progress}");
+                        // コマンド実行時にタスク情報も表示(デバッグ用)
+                        Debug.Log($"[LLM] {response.command} コマンドを実行 | タスク: {response.current_task}");
                         
                         // コマンド実行開始
                         isExecutingCommand = true;
                         
-                        // コマンドを実行
-                        ExecuteCommand(response.command);
+                        // 座標移動コマンドの場合、座標情報を使用
+                        if (response.command == "navigate" && response.x.HasValue && response.y.HasValue && response.z.HasValue)
+                        {
+                            string navigateCommand = $"navigate:{response.x},{response.y},{response.z}";
+                            ExecuteCommand(navigateCommand);
+                        }
+                        else
+                        {
+                            // 通常のコマンドを実行
+                            ExecuteCommand(response.command);
+                        }
                     }
                 }
                 catch (Exception e)
@@ -197,6 +169,36 @@ public class LLMCommunicator : MonoBehaviour
         
         isProcessingRequest = false;
     }
+
+    /// <summary>
+    /// AccessibilityNarratorにログ収集を依頼し、取得したログをバックエンドに送信
+    /// </summary>
+    private void RequestSituationLogs()
+    {
+        // AccessibilityNarratorからログを能動的に収集
+        List<string> situationLogs = logManager.CollectCurrentSituationLogs();
+        
+        if (situationLogs != null && situationLogs.Count > 0)
+        {
+            if (enableDebugLogs)
+            {
+                Debug.Log($"[LLMCommunicator] ログ収集完了 - バックエンドに送信（{situationLogs.Count}件）");
+            }
+            
+            // 収集したログをバックエンドに送信
+            StartCoroutine(SendLogsToBackend(situationLogs));
+        }
+        else
+        {
+            if (enableDebugLogs)
+            {
+                Debug.LogWarning("[LLMCommunicator] 収集されたログがありません");
+            }
+        }
+    }
+    #endregion
+
+    #region 4. コマンド処理(取得したコマンドを、CommandExecutorに渡して実行)
     
     private void ExecuteCommand(string command)
     {
@@ -273,23 +275,5 @@ public class LLMCommunicator : MonoBehaviour
         
         return normalized;
     }
-    
-    // 手動でログを送信するメソッド（テスト用）
-    public void SendManualLog(string logMessage)
-    {
-        List<string> testLogs = new List<string> { logMessage };
-        StartCoroutine(SendLogsToBackend(testLogs));
-    }
-    
-    // コマンド実行完了を外部から通知するメソッド
-    public void OnCommandCompleted()
-    {
-        isExecutingCommand = false;
-        
-        // コマンド実行完了後に最新の状況ログを送信
-        if (hasPendingSituation && latestSituationLogs.Count > 0)
-        {
-            ProcessLatestSituation();
-        }
-    }
-} 
+    #endregion
+}

@@ -1,3 +1,7 @@
+// アクセシビリティナレーター
+// - プレイヤー周辺のオブジェクト検出 / ログ整形
+// 構成: 4=データ収集、5=検出・判定(4で使用)、6=ユーティリティ(6.1〜6.4)
+
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,19 +14,13 @@ public class AccessibilityNarrator : MonoBehaviour
     public float forwardRayDistance = 3.0f;
     public LayerMask detectionLayer = -1;
     
-    [Header("Narrator Settings")]
-    public float updateInterval = 2.0f; // ナレーション更新間隔（秒）
-    public bool enablePositionNarration = true;
-    public bool enableObjectNarration = true;
-    public bool enableDirectionNarration = true;
-    public bool enableActionNarration = true; // アクションナレーションの有効/無効
+    [Header("Log Management Settings")]
+    public bool enableActionLogging = true; // アクションログの有効/無効
     public bool suppressTechnicalLogs = true; // 技術的ログを非表示にする
+    public bool enableDebugOutput = false; // デバッグ用の自動ログ出力
     
     private Camera playerCamera;
     private PlayerPickupController pickupController;
-    private Vector3 lastPosition;
-    private float lastUpdateTime;
-    private Dictionary<string, Vector3> lastKnownObjectPositions = new Dictionary<string, Vector3>();
     
     // シングルトンインスタンス
     public static AccessibilityNarrator Instance;
@@ -31,9 +29,11 @@ public class AccessibilityNarrator : MonoBehaviour
     private string lastNearbyItem = "";
     private string lastNearbyTV = "";
     
-    // 前回の状況報告内容（変化があった場合のみ出力するため）
-    private string lastSituationReport = "";
-    
+    // アクションログ管理
+    private List<string> actionLogs = new List<string>();
+    private bool hasNewActionData = false;
+
+    #region 1. Core lifecycle & setup
     void Awake()
     {
         // シングルトンパターンの実装
@@ -63,6 +63,19 @@ public class AccessibilityNarrator : MonoBehaviour
         }
     }
     
+    void Start()
+    {
+        // プレイヤーのカメラを取得
+        playerCamera = Camera.main;
+        if (playerCamera == null)
+        {
+            playerCamera = FindFirstObjectByType<Camera>();
+        }
+        
+        // プレイヤーのPickupControllerを取得
+        pickupController = GetComponent<PlayerPickupController>();
+    }
+
     /// <summary>
     /// 技術的ログをフィルタリングして非表示にする
     /// </summary>
@@ -78,64 +91,218 @@ public class AccessibilityNarrator : MonoBehaviour
             return; // 表示しない
         }
     }
-    
-    void Start()
+
+    /// <summary>
+    /// (補助) コマンド完了時の内部処理。実装が別途ある場合は置き換えてください。
+    /// </summary>
+    private void OnCommandFinished() { /* TODO: 必要なら処理を追加 */ }
+    #endregion
+
+    #region 2. Public API
+    /// <summary>
+    /// LLMCommunicatorからの要求に応じて現在の状況ログを収集・返却
+    /// </summary>
+    public List<string> CollectCurrentSituationLogs()
     {
-        // プレイヤーのカメラを取得
-        playerCamera = Camera.main;
-        if (playerCamera == null)
+        List<string> allData = new List<string>();
+        
+        // 1. 基本状況情報を取得
+        List<string> situationData = GatherCurrentSituationData();
+        allData.AddRange(situationData);
+        
+        // 2. 実行したアクションセクション
+        List<string> recentActions = GatherRecentActionInfo();
+        if (recentActions.Count > 0)
         {
-            playerCamera = FindFirstObjectByType<Camera>();
+            allData.Add("[実行したアクション]");
+            allData.AddRange(recentActions);
         }
         
-        // プレイヤーのPickupControllerを取得
-        pickupController = GetComponent<PlayerPickupController>();
+        // 3. 検出情報セクション
+        List<string> detectionInfo = GatherDetectionInfo();
+        if (detectionInfo.Count > 0)
+        {
+            allData.Add("[検出情報]");
+            allData.AddRange(detectionInfo);
+        }
         
-        lastPosition = transform.position;
-        lastUpdateTime = Time.time;
+        if (enableDebugOutput)
+        {
+            Debug.Log($"[Narrator] 状況ログを収集完了（{allData.Count}件のデータ）");
+        }
         
-        // 初期ナレーション（強制的に出力）
-        lastSituationReport = ""; // 初期状況を確実に出力するため
-        NarrateCurrentSituation();
+        return allData;
+    }
+
+    /// <summary>
+    /// コマンド実行完了通知
+    /// </summary>
+    public void OnCommandCompleted()
+    {
+        // コマンド実行終了（ログ出力再開など）
+        OnCommandFinished();
+        
+        if (enableDebugOutput)
+        {
+            Debug.Log("[Narrator] コマンド実行完了");
+        }
+        
+        // LLMCommunicatorに通知
+        if (LLMCommunicator.Instance != null)
+        {
+            LLMCommunicator.Instance.OnCommandCompleted();
+        }
+    }
+    #endregion
+
+    #region 3. Event Handlers
+    /// <summary>
+    /// アイテムを拾った時のナレーション
+    /// </summary>
+    public void OnItemPickedUp(string itemName)
+    {
+        if (!enableActionLogging) return;
+        
+        // 「Dai」を「PCプレート」として表示
+        string displayName = itemName;
+        if (itemName == "Dai")
+        {
+            displayName = "PCプレート";
+        }
+        
+        string actionMessage = $"{displayName}を持ち上げました！pickupコマンドで置くことができます。";
+        actionLogs.Add(actionMessage);
+        hasNewActionData = true;
+        
+        if (enableDebugOutput)
+        {
+            Debug.Log(actionMessage);
+        }
     }
     
-    void Update()
+    /// <summary>
+    /// アイテムを置いた時のナレーション
+    /// </summary>
+    public void OnItemDropped(string itemName, Vector3 dropPosition)
     {
-        // 定期的にナレーションを更新
-        if (Time.time - lastUpdateTime >= updateInterval)
+        if (!enableActionLogging) return;
+        
+        // ドロップした場所の詳細を取得
+        string dropLocationDetails = GetDropLocationDetails(dropPosition);
+        
+        // 「Dai」を「PCプレート」として表示
+        string displayName = itemName;
+        if (itemName == "Dai")
         {
-            NarrateCurrentSituation();
-            lastUpdateTime = Time.time;
+            displayName = "PCプレート";
         }
         
-        // 移動時のナレーション（簡潔に）
-        if (Vector3.Distance(transform.position, lastPosition) > 2.0f)
+        string actionMessage = $"{displayName}を置きました！場所: {dropLocationDetails}";
+        actionLogs.Add(actionMessage);
+        hasNewActionData = true;
+        
+        if (enableDebugOutput)
         {
-            NarrateMovement();
-            lastPosition = transform.position;
+            Debug.Log(actionMessage);
         }
     }
     
-    public void NarrateCurrentSituation()
+    /// <summary>
+    /// 近くのアイテムを検出した時のナレーション（ログは抑制）
+    /// </summary>
+    public void OnNearbyItemDetected(string itemName, float distance)
     {
-        if (!enablePositionNarration && !enableObjectNarration) return;
+        if (!enableActionLogging) return;
         
-        System.Text.StringBuilder narration = new System.Text.StringBuilder();
+        // 重複を避ける
+        string currentItem = $"{itemName}_{distance:F1}";
+        if (lastNearbyItem == currentItem) return;
+        lastNearbyItem = currentItem;
+        
+        // 方角を計算（必要に応じて利用）
+        ItemPickup nearbyItem = pickupController?.currentNearbyItem;
+        if (nearbyItem != null)
+        {
+            Vector3 directionVector = (nearbyItem.transform.position - transform.position).normalized;
+            _ = GetDirectionText(directionVector); // 方向テキスト計算のみ
+        }
+        
+        // 表示名の正規化
+        _ = (itemName == "Dai") ? "PCプレート" : itemName;
+        
+        // アイテム検出ログは完全に除外
+    }
+    
+    /// <summary>
+    /// TVを操作した時のナレーション
+    /// </summary>
+    public void OnTVToggled(string deviceName, bool isOn)
+    {
+        if (!enableActionLogging) return;
+        
+        string stateText = isOn ? "ON" : "OFF";
+        string actionMessage = $"{deviceName}を{stateText}にしました！";
+        actionLogs.Add(actionMessage);
+        hasNewActionData = true;
+        
+        if (enableDebugOutput)
+        {
+            Debug.Log(actionMessage);
+        }
+    }
+    
+    /// <summary>
+    /// 近くのTVを検出した時のナレーション（ログは抑制）
+    /// </summary>
+    public void OnNearbyTVDetected(string deviceName, float distance, bool isOn)
+    {
+        if (!enableActionLogging) return;
+        
+        // 重複を避ける
+        string stateText = isOn ? "ON" : "OFF";
+        string currentTV = $"{deviceName}_{distance:F1}_{stateText}";
+        if (lastNearbyTV == currentTV) return;
+        lastNearbyTV = currentTV;
+        
+        // 方角を計算（必要に応じて利用）
+        TVInteract nearbyTV = pickupController?.currentNearbyTV;
+        if (nearbyTV != null)
+        {
+            Vector3 directionVector = (nearbyTV.GetButtonPosition() - transform.position).normalized;
+            _ = GetDirectionText(directionVector);
+        }
+    }
+
+    /// <summary>
+    /// 近くのアイテムリセット
+    /// </summary>
+    public void ResetNearbyItem() => lastNearbyItem = "";
+    
+    /// <summary>
+    /// 近くのTVリセット
+    /// </summary>
+    public void ResetNearbyTV() => lastNearbyTV = "";
+    #endregion
+
+    #region 4. データ収集メソッド（CollectCurrentSituationLogsから呼ばれる）
+    /// <summary>
+    /// 基本状況データを収集
+    /// </summary>
+    private List<string> GatherCurrentSituationData()
+    {
+        List<string> situationData = new List<string>();
         
         // 現在の状況タイトル
-        narration.AppendLine("[Narrator] === 現在の状況 ===");
+        situationData.Add("=== 現在の状況 ===");
         
         // 現在地情報
-        narration.AppendLine("[現在地]");
+        situationData.Add("[現在地]");
         Vector3 pos = transform.position;
-        narration.AppendLine($"座標（X={pos.x:F1}, Z={pos.z:F1}）");
+        situationData.Add($"座標（X={pos.x:F1}, Z={pos.z:F1}）");
         
-        // 向いている方向
-        string currentDirection = GetDirectionText(transform.forward);
-        narration.AppendLine($"{currentDirection}方向を向いています");
         
         // 周辺の状況
-        narration.AppendLine("[周辺の状況]");
+        situationData.Add("[周辺の状況]");
         var objects = GetImportantObjectsPositions();
         var tables = GetTablePositions();
         
@@ -145,44 +312,33 @@ public class AccessibilityNarrator : MonoBehaviour
         
         if (allObjects.Count > 0)
         {
-            foreach (var obj in allObjects)
-            {
-                narration.AppendLine(obj);
-            }
+            situationData.AddRange(allObjects);
         }
         else
-            {
-            narration.AppendLine("周辺に重要なオブジェクトはありません");
+        {
+            situationData.Add("周辺に重要なオブジェクトはありません");
         }
         
         // 持っているもの
-        narration.AppendLine("[持っているもの]");
+        situationData.Add("[持っているもの]");
         if (pickupController != null && pickupController.carriedItem != null)
         {
-            narration.AppendLine(pickupController.carriedItem.itemName);
+            situationData.Add(pickupController.carriedItem.itemName);
         }
         else
         {
-            narration.AppendLine("何も持っていません");
+            situationData.Add("何も持っていません");
         }
         
-
-        
         // 可能なコマンド
-        narration.AppendLine("[可能なコマンド]");
-        
-        // 移動可能な方向のみを取得
+        situationData.Add("[可能なコマンド]");
         List<string> commands = GetAvailableMovementCommands();
         
-        // アイテム関連のコマンド（何も持っていない場合のみ）
+        // アイテム関連のコマンド
         if (pickupController != null && pickupController.currentNearbyItem != null && pickupController.carriedItem == null)
         {
             string itemName = pickupController.currentNearbyItem.itemName;
-            // 「Dai」を「PCプレート」として表示
-            if (itemName == "Dai")
-            {
-                itemName = "PCプレート";
-            }
+            if (itemName == "Dai") itemName = "PCプレート";
             commands.Add($"pickup（{itemName}を拾う）");
         }
         
@@ -200,703 +356,59 @@ public class AccessibilityNarrator : MonoBehaviour
             commands.Add($"interact（{pickupController.currentNearbyTV.deviceName}を操作・現在{tvState}）");
         }
         
-        // コマンドを出力
         if (commands.Count > 0)
         {
-        narration.AppendLine($"  {string.Join("、", commands)}");
+            situationData.Add($"  {string.Join("、", commands)}");
         }
         else
         {
-            narration.AppendLine("  移動不可");
+            situationData.Add("  移動不可");
         }
         
-        narration.AppendLine("========================");
         
-        // 前回と同じ内容かチェック
-        string currentReport = narration.ToString();
-        if (lastSituationReport == currentReport)
-        {
-            return; // 同じ内容の場合は出力しない
-        }
-        
-        // 前回の内容を更新
-        lastSituationReport = currentReport;
-        
-        // 構造化されたログを出力
-        Debug.Log(currentReport);
-        
-        // 完了通知を即座に送信
-        OnCommandCompleted();
-    }
-    
-    private IEnumerator NotifyCommandCompletionAfterDelay()
-    {
-        yield return new WaitForSeconds(0.1f); // 短い待機
-        OnCommandCompleted();
-    }
-    
-    void NarrateMovement()
-    {
-        if (!enableDirectionNarration) return;
-        
-        Vector3 direction = (transform.position - lastPosition).normalized;
-        string directionText = GetDirectionText(direction);
-        Vector3 pos = transform.position;
-        
-        // 移動距離の差分を計算
-        float moveDistance = Vector3.Distance(transform.position, lastPosition);
-        Vector3 positionDiff = transform.position - lastPosition;
-        
-        Debug.Log($"[Narrator] {directionText}方向に約{moveDistance:F1}メートル移動（X:{positionDiff.x:+0.0;-0.0}, Z:{positionDiff.z:+0.0;-0.0}）現在座標X:{pos.x:F1}, Z:{pos.z:F1}");
-    }
-    
-    string GetPositionDescription()
-    {
-        Vector3 pos = transform.position;
-        
-        // 詳細な位置説明
-        string roomDescription = "";
-        
-        if (pos.x > 0 && pos.z > 0)
-            roomDescription = "部屋の北東側";
-        else if (pos.x > 0 && pos.z < 0)
-            roomDescription = "部屋の南東側";
-        else if (pos.x < 0 && pos.z > 0)
-            roomDescription = "部屋の北西側";
-        else if (pos.x < 0 && pos.z < 0)
-            roomDescription = "部屋の南西側";
-        else if (pos.x > 0)
-            roomDescription = "部屋の東側";
-        else if (pos.x < 0)
-            roomDescription = "部屋の西側";
-        else if (pos.z > 0)
-            roomDescription = "部屋の北側";
-        else if (pos.z < 0)
-            roomDescription = "部屋の南側";
-        else
-            roomDescription = "部屋の中央";
-        
-        // 向いている方向を追加
-        Vector3 forward = transform.forward;
-        string facingDirection = GetDirectionText(forward);
-        
-        // 座標情報を追加
-        string coordinates = $"座標X:{pos.x:F1}, Z:{pos.z:F1}";
-        
-        return $"現在{roomDescription}にいます（{coordinates}）。{facingDirection}を向いています";
-    }
-    
-    string GetObjectInFront()
-    {
-        if (playerCamera == null) return "";
-        
-        RaycastHit hit;
-        Vector3 rayOrigin = playerCamera.transform.position;
-        Vector3 rayDirection = playerCamera.transform.forward;
-        
-        if (Physics.Raycast(rayOrigin, rayDirection, out hit, forwardRayDistance, detectionLayer))
-        {
-            return GetObjectDescription(hit.collider.gameObject);
-        }
-        
-        return "";
-    }
-    
-    (string, float) GetObjectInFrontWithDistance()
-    {
-        if (playerCamera == null) return ("", 0f);
-        
-        RaycastHit hit;
-        Vector3 rayOrigin = playerCamera.transform.position;
-        Vector3 rayDirection = playerCamera.transform.forward;
-        
-        if (Physics.Raycast(rayOrigin, rayDirection, out hit, forwardRayDistance, detectionLayer))
-        {
-            // デバッグ情報
-            Debug.Log($"[Debug] レイキャストヒット: {hit.collider.gameObject.name}");
-            
-            string objDescription = GetObjectDescriptionWithObstacles(hit.collider.gameObject);
-            
-            Debug.Log($"[Debug] 前方オブジェクト検出結果: '{objDescription}'");
-            
-            if (!string.IsNullOrEmpty(objDescription))
-            {
-                return (objDescription, hit.distance);
-            }
-        }
-        
-        return ("", 0f);
-    }
-    
-    List<string> GetSurroundingObjects()
-    {
-        List<string> objects = new List<string>();
-        Collider[] colliders = Physics.OverlapSphere(transform.position, detectionRadius, detectionLayer);
-        
-        Dictionary<string, List<Vector3>> objectGroups = new Dictionary<string, List<Vector3>>();
-        
-        foreach (Collider col in colliders)
-        {
-            if (col.gameObject == gameObject) continue; // 自分自身は除外
-            
-            string objName = GetObjectDescription(col.gameObject);
-            if (!string.IsNullOrEmpty(objName))
-            {
-                // 重要なオブジェクトは除外（すでに重要なオブジェクトセクションで表示されるため）
-                if (IsImportantObject(objName)) continue;
-                
-                if (!objectGroups.ContainsKey(objName))
-                {
-                    objectGroups[objName] = new List<Vector3>();
-                }
-                objectGroups[objName].Add(col.transform.position);
-            }
-        }
-        
-        foreach (var group in objectGroups)
-        {
-            string objName = group.Key;
-            List<Vector3> positions = group.Value;
-            
-            if (positions.Count == 1)
-            {
-                Vector3 diff = positions[0] - transform.position;
-                string directionText = GetDirectionText(diff.normalized);
-                string coordinates = $"X:{diff.x:+0.0;-0.0}, Z:{diff.z:+0.0;-0.0}";
-                objects.Add($"{directionText}({coordinates})に{objName}");
-            }
-            else
-            {
-                // 複数ある場合は、最も近いものの方向と距離を表示
-                Vector3 nearest = positions.OrderBy(p => Vector3.Distance(transform.position, p)).First();
-                Vector3 diff = nearest - transform.position;
-                string directionText = GetDirectionText(diff.normalized);
-                string coordinates = $"X:{diff.x:+0.0;-0.0}, Z:{diff.z:+0.0;-0.0}";
-                string countText = GetCountText(objName, positions.Count);
-                objects.Add($"{directionText}({coordinates})に{countText}");
-            }
-        }
-        
-        return objects.Take(5).ToList(); // 最大5個まで
+        return situationData;
     }
     
     /// <summary>
-    /// 重要なオブジェクトかどうかを判定
+    /// 検出情報を収集（アイテム検出、TV検出、エリア到達等）
     /// </summary>
-    private bool IsImportantObject(string objName)
+    private List<string> GatherDetectionInfo()
     {
-        return objName == "椅子" || objName == "運搬可能な椅子" || objName == "テレビ" || 
-               objName == "パソコン" || objName == "台" || objName == "テーブル";
-    }
-    
-    string GetObjectDescription(GameObject obj)
-    {
-        // まず親オブジェクトを確認して重要なオブジェクトかチェック
-        GameObject rootObject = GetRootImportantObject(obj);
-        if (rootObject != null)
-        {
-            return GetImportantObjectName(rootObject);
-        }
+        List<string> detectionInfo = new List<string>();
         
-        string name = obj.name.ToLower();
+        // エリア到達チェック
+        CheckAreaArrivalForLog(detectionInfo);
         
-        // 不要なオブジェクトを除外
-        if (name.Contains("wall") || name.Contains("floor") || name.Contains("flore"))
-            return ""; // 壁や床は除外
-        else if (name.Contains("cube") || name.Contains("cylinder") || name.Contains("sphere"))
-            return ""; // 基本的な形状オブジェクトは除外
-        else if (name.Contains("collider") || name.Contains("trigger"))
-            return ""; // コライダーは除外
-        else if (name.Contains("camera") || name.Contains("light"))
-            return ""; // カメラやライトは除外
+        // 近くのアイテム検出
+        CheckNearbyItemsForLog(detectionInfo);
         
-        // それ以外は空文字列で除外
-        return "";
+        // 近くのTV検出
+        CheckNearbyTVsForLog(detectionInfo);
+        
+        return detectionInfo;
     }
     
     /// <summary>
-    /// 前方の障害物検出（机、TV等も含む）
+    /// 最近のアクション情報を収集（アイテム拾い上げ、設置、TV操作等）
     /// </summary>
-    string GetObjectDescriptionWithObstacles(GameObject obj)
+    private List<string> GatherRecentActionInfo()
     {
-        string name = obj.name.ToLower();
+        List<string> actionInfo = new List<string>();
         
-        // まず親オブジェクトから確認（Cubeなどの場合）
-        Transform checkObject = obj.transform;
-        while (checkObject != null)
+        // 蓄積されたアクションログがあれば追加
+        if (actionLogs.Count > 0)
         {
-            string checkName = checkObject.name.ToLower();
-            
-            // 正確なオブジェクト名に基づいて判定
-            if (checkName == "chairs" || checkName.StartsWith("chair"))
-                return "椅子";
-            else if (checkName == "tables" || checkName == "table" || checkName.StartsWith("table "))
-                return "テーブル";
-            else if (checkName == "pc")
-                return "パソコン";
-            else if (checkName == "tv")
-                return "テレビ";
-            else if (checkName == "dai")
-                return "台";
-            else if (checkName.Contains("wall"))
-                return "壁";
-            else if (checkName.Contains("door"))
-                return "ドア";
-            else if (checkName.Contains("desk"))
-                return "机";
-            
-            // ItemPickupコンポーネントがあるかチェック
-            ItemPickup itemPickup = checkObject.GetComponent<ItemPickup>();
-            if (itemPickup != null)
-            {
-                return itemPickup.itemName;
-            }
-            
-            // TVInteractコンポーネントがあるかチェック
-            TVInteract tvInteract = checkObject.GetComponent<TVInteract>();
-            if (tvInteract != null)
-            {
-                return tvInteract.deviceName;
-            }
-            
-            checkObject = checkObject.parent;
+            actionInfo.AddRange(actionLogs);
+            // 取得後にクリア（次回は新しいアクションのみ）
+            actionLogs.Clear();
+            hasNewActionData = false;
         }
         
-        // 除外するオブジェクト
-        if (name.Contains("floor") || name.Contains("flore"))
-            return ""; // 床は除外
-        else if (name.Contains("ground"))
-            return ""; // 地面は除外
-        else if (name.Contains("collider") || name.Contains("trigger"))
-            return ""; // コライダーは除外
-        
-        // その他の障害物として扱う
-        return obj.name;
+        return actionInfo;
     }
-    
-    string GetDirectionText(Vector3 direction)
-    {
-        // より正確な座標差分表記
-        float x = direction.x;
-        float z = direction.z;
-        
-        // 主要な方向を判定
-        if (Mathf.Abs(x) > Mathf.Abs(z))
-        {
-            // X方向が主要
-            if (x > 0)
-                return z > 0.1f ? "+X+Z" : z < -0.1f ? "+X-Z" : "+X";
-            else
-                return z > 0.1f ? "-X+Z" : z < -0.1f ? "-X-Z" : "-X";
-        }
-        else
-        {
-            // Z方向が主要
-            if (z > 0)
-                return x > 0.1f ? "+X+Z" : x < -0.1f ? "-X+Z" : "+Z";
-            else
-                return x > 0.1f ? "+X-Z" : x < -0.1f ? "-X-Z" : "-Z";
-        }
-    }
-    
-    string GetInteractableObjectsInfo()
-    {
-        List<string> interactableInfo = new List<string>();
-        
-        // 近くのアイテム（拾える）
-        if (pickupController != null && pickupController.currentNearbyItem != null)
-        {
-            string itemName = pickupController.currentNearbyItem.itemName;
-            // 「Dai」を「PCプレート」として表示
-            if (itemName == "Dai")
-            {
-                itemName = "PCプレート";
-            }
-            interactableInfo.Add($"pickup（{itemName}を拾う）");
-        }
-        
-        // 近くのTV（操作できる）
-        if (pickupController != null && pickupController.currentNearbyTV != null)
-        {
-            string tvState = pickupController.currentNearbyTV.IsOn() ? "ON" : "OFF";
-            interactableInfo.Add($"interact（TVを操作・現在{tvState}）");
-        }
-        
-        return string.Join("。", interactableInfo);
-    }
-    
-    string GetDropLocationInfo()
-    {
-        if (playerCamera == null) return "pickup（目の前に置く）";
-        
-        // プレイヤーの前方1.5メートルの位置を基準とする
-        Vector3 dropPosition = transform.position + transform.forward * 1.5f;
-        
-        // 下方向にレイを飛ばして、置ける表面を探す
-        RaycastHit hit;
-        Vector3 rayOrigin = dropPosition + Vector3.up * 2f; // 2メートル上から
-        Vector3 rayDirection = Vector3.down;
-        
-        if (Physics.Raycast(rayOrigin, rayDirection, out hit, 4f, detectionLayer))
-        {
-            // 置く場所の種類を判定
-            string surfaceType = GetSurfaceType(hit.collider.gameObject);
-            
-            return $"pickup（{surfaceType}に置く）";
-        }
-        else
-        {
-            // レイが何にも当たらない場合は、地面に置く予定として表示
-            return $"pickup（地面に置く）";
-        }
-    }
-    
-    string GetSurfaceType(GameObject surface)
-    {
-        // まず現在のオブジェクトをチェック
-        string surfaceResult = CheckSurfaceTypeName(surface);
-        if (!string.IsNullOrEmpty(surfaceResult))
-        {
-            return surfaceResult;
-        }
-        
-        // 親オブジェクトをチェック
-        Transform parent = surface.transform.parent;
-        while (parent != null)
-        {
-            string parentResult = CheckSurfaceTypeName(parent.gameObject);
-            if (!string.IsNullOrEmpty(parentResult))
-            {
-                return parentResult;
-            }
-            parent = parent.parent;
-        }
-        
-        // どれにも該当しない場合
-        return $"{surface.name}の上";
-    }
-    
-    string CheckSurfaceTypeName(GameObject obj)
-    {
-        string name = obj.name.ToLower();
-        
-        if (name.Contains("table"))
-            return "テーブルの上";
-        else if (name.Contains("desk"))
-            return "デスクの上";
-        else if (name.Contains("chairarea"))
-            return "椅子エリア";
-        else if (name.Contains("chair"))
-            return "椅子の上";
-        else if (name.Contains("daiarea"))
-            return "台エリア";
-        else if (name.Contains("dai"))
-            return "台の上";
-        else if (name.Contains("floor") || name.Contains("flore"))
-            return "床";
-        else if (name.Contains("ground"))
-            return "地面";
-        
-        // コンポーネントをチェックして詳細を取得
-        ItemPickup itemPickup = obj.GetComponent<ItemPickup>();
-        if (itemPickup != null)
-        {
-            return $"{itemPickup.itemName}の上";
-        }
-        
-        TVInteract tvInteract = obj.GetComponent<TVInteract>();
-        if (tvInteract != null)
-        {
-            return $"{tvInteract.deviceName}の上";
-        }
-        
-        // 該当しない場合は空文字列を返す
-        return "";
-    }
-    
-    // === イベントハンドラーメソッド ===
-    
-    /// <summary>
-    /// アイテムを拾った時のナレーション
-    /// </summary>
-    public void OnItemPickedUp(string itemName)
-    {
-        if (!enableActionNarration) return;
-        
-        // 「Dai」を「PCプレート」として表示
-        string displayName = itemName;
-        if (itemName == "Dai")
-        {
-            displayName = "PCプレート";
-        }
-        
-        Debug.Log($"[Narrator] {displayName}を持ち上げました！pickupコマンドで置くことができます。");
-    }
-    
-    /// <summary>
-    /// アイテムを置いた時のナレーション
-    /// </summary>
-    public void OnItemDropped(string itemName, Vector3 dropPosition)
-    {
-        if (!enableActionNarration) return;
-        
-        // ドロップした場所の詳細を取得
-        string dropLocationDetails = GetDropLocationDetails(dropPosition);
-        
-        // 「Dai」を「PCプレート」として表示
-        string displayName = itemName;
-        if (itemName == "Dai")
-        {
-            displayName = "PCプレート";
-        }
-        
-        Debug.Log($"[Narrator] {displayName}を置きました！場所: {dropLocationDetails}");
-    }
-    
-    /// <summary>
-    /// 近くのアイテムを検出した時のナレーション
-    /// </summary>
-    public void OnNearbyItemDetected(string itemName, float distance)
-    {
-        if (!enableActionNarration) return;
-        
-        // 重複を避ける
-        string currentItem = $"{itemName}_{distance:F1}";
-        if (lastNearbyItem == currentItem) return;
-        lastNearbyItem = currentItem;
-        
-        // 方角を計算
-        ItemPickup nearbyItem = pickupController.currentNearbyItem;
-        string direction = "";
-        if (nearbyItem != null)
-        {
-            Vector3 directionVector = (nearbyItem.transform.position - transform.position).normalized;
-            direction = GetDirectionText(directionVector);
-        }
-        
-        // 「Dai」を「PCプレート」として表示
-        string displayName = itemName;
-        if (itemName == "Dai")
-        {
-            displayName = "PCプレート";
-        }
-        
-        Debug.Log($"[Narrator] {direction}約{distance:F1}メートルに{displayName}があります・pickupコマンドで持ち上げられます");
-    }
-    
-    /// <summary>
-    /// TVを操作した時のナレーション
-    /// </summary>
-    public void OnTVToggled(string deviceName, bool isOn)
-    {
-        if (!enableActionNarration) return;
-        
-        string stateText = isOn ? "ON" : "OFF";
-        Debug.Log($"[Narrator] {deviceName}を{stateText}にしました！");
-    }
-    
-    /// <summary>
-    /// 近くのTVを検出した時のナレーション
-    /// </summary>
-    public void OnNearbyTVDetected(string deviceName, float distance, bool isOn)
-    {
-        if (!enableActionNarration) return;
-        
-        // 重複を避ける
-        string stateText = isOn ? "ON" : "OFF";
-        string currentTV = $"{deviceName}_{distance:F1}_{stateText}";
-        if (lastNearbyTV == currentTV) return;
-        lastNearbyTV = currentTV;
-        
-        // 方角を計算
-        TVInteract nearbyTV = pickupController.currentNearbyTV;
-        string direction = "";
-        if (nearbyTV != null)
-        {
-            Vector3 directionVector = (nearbyTV.GetButtonPosition() - transform.position).normalized;
-            direction = GetDirectionText(directionVector);
-        }
-        
-        Debug.Log($"[Narrator] {direction}約{distance:F1}メートルに{deviceName}があります・現在{stateText}・interactコマンドで操作できます");
-    }
-    
-    /// <summary>
-    /// ドロップした場所の詳細を取得
-    /// </summary>
-    private string GetDropLocationDetails(Vector3 dropPosition)
-    {
-        Vector3 direction = (dropPosition - transform.position).normalized;
-        string directionText = GetDirectionText(direction);
-        float distance = Vector3.Distance(transform.position, dropPosition);
-        string coordinates = $"座標X:{dropPosition.x:F1}, Z:{dropPosition.z:F1}";
-        
-        // 特定エリアの検出
-        string locationDetails = DetectSpecialArea(dropPosition);
-        if (!string.IsNullOrEmpty(locationDetails))
-        {
-            return $"{coordinates}、{locationDetails}";
-        }
-        
-        return $"{coordinates}、{directionText}約{distance:F1}メートル";
-    }
-    
-    /// <summary>
-    /// 特定エリア（ChairArea、DaiAreaなど）の検出
-    /// </summary>
-    private string DetectSpecialArea(Vector3 position)
-    {
-        // ChairArea（X=5.48, Z=-3.69）付近の検出
-        Vector3 chairAreaCenter = new Vector3(5.48f, position.y, -3.69f);
-        float chairAreaDistance = Vector3.Distance(position, chairAreaCenter);
-        if (chairAreaDistance <= 2.0f)
-        {
-            return "ChairArea付近";
-        }
-        
-        // DaiArea（X=0.02, Z=3.55）付近の検出
-        Vector3 daiAreaCenter = new Vector3(0.02f, position.y, 3.55f);
-        float daiAreaDistance = Vector3.Distance(position, daiAreaCenter);
-        if (daiAreaDistance <= 2.0f)
-        {
-            return "DaiArea付近";
-        }
-        
-        return "";
-    }
-    
-    /// <summary>
-    /// 近くのアイテムリセット
-    /// </summary>
-    public void ResetNearbyItem()
-    {
-        lastNearbyItem = "";
-    }
-    
-    /// <summary>
-    /// 近くのTVリセット
-    /// </summary>
-    public void ResetNearbyTV()
-    {
-        lastNearbyTV = "";
-    }
-    
-    /// <summary>
-    /// 移動可能な方向のコマンドを取得
-    /// </summary>
-    private List<string> GetAvailableMovementCommands()
-    {
-        List<string> availableCommands = new List<string>();
-        
-        // 各方向をチェック
-        Vector3[] directions = {
-            Vector3.forward,  // +Z
-            Vector3.right,    // +X
-            Vector3.back,     // -Z
-            Vector3.left      // -X
-        };
-        
-        string[] directionNames = { "+Z", "+X", "-Z", "-X" };
-        
-        for (int i = 0; i < directions.Length; i++)
-        {
-            string obstacle = GetObstacleInDirection(directions[i]);
-            if (string.IsNullOrEmpty(obstacle))
-            {
-                availableCommands.Add(directionNames[i]);
-            }
-            // 利用不可のコマンドは表示しない
-        }
-        
-        return availableCommands;
-    }
-    
-    /// <summary>
-    /// 指定した方向に移動可能かチェック
-    /// </summary>
-    private bool CanMoveInDirection(Vector3 direction)
-    {
-        return string.IsNullOrEmpty(GetObstacleInDirection(direction));
-    }
-    
-    /// <summary>
-    /// 指定した方向にある障害物の名前を取得（障害物がない場合は空文字を返す）
-    /// </summary>
-    private string GetObstacleInDirection(Vector3 direction)
-    {
-        // プレイヤーの現在位置から少し上の位置を起点とする（地面を避けるため）
-        Vector3 rayOrigin = transform.position + Vector3.up * 1.0f;
-        
-        // 指定された方向に1.5メートル先まで障害物がないかチェック
-        float checkDistance = 1.5f;
-        
-        RaycastHit hit;
-        if (Physics.Raycast(rayOrigin, direction, out hit, checkDistance, detectionLayer))
-        {
-            // ヒットしたオブジェクトが床や地面の場合はOK
-            string hitObjectName = hit.collider.name.ToLower();
-            if (hitObjectName.Contains("floor") || hitObjectName.Contains("flore") || hitObjectName.Contains("ground"))
-            {
-                // 床の場合は障害物ではない
-            }
-            else
-            {
-                // 障害物の名前を取得
-                string obstacleName = GetObstacleObjectName(hit.collider.gameObject);
-                if (!string.IsNullOrEmpty(obstacleName))
-                {
-                    return obstacleName;
-                }
-            }
-        }
-        
-        // 地面があるかもチェック（落下防止）- より緩い条件に変更
-        Vector3 groundCheckOrigin = transform.position + direction * checkDistance + Vector3.up * 1.0f;
-        if (!Physics.Raycast(groundCheckOrigin, Vector3.down, 3.0f, detectionLayer))
-        {
-            // 地面がない場合は移動不可（室内なので壁として扱う）
-            return "壁";
-        }
-        
-        return ""; // 障害物なし
-    }
-    
-    /// <summary>
-    /// 障害物オブジェクトの名前を取得
-    /// </summary>
-    private string GetObstacleObjectName(GameObject obj)
-    {
-        // 重要なオブジェクトのルートを取得
-        GameObject rootObject = GetRootImportantObject(obj);
-        if (rootObject != null)
-        {
-            string importantName = GetImportantObjectName(rootObject);
-            if (!string.IsNullOrEmpty(importantName))
-            {
-                return importantName;
-            }
-        }
-        
-        // 一般的なオブジェクト名を取得
-        string objName = GetObjectDescription(obj);
-        if (!string.IsNullOrEmpty(objName))
-        {
-            return objName;
-        }
-        
-        // フォールバック：オブジェクト名そのまま
-        string name = obj.name.ToLower();
-        if (name.Contains("wall"))
-            return "壁";
-        else if (name.Contains("door"))
-            return "ドア";
-        else if (name.Contains("table"))
-            return "テーブル";
-        else if (name.Contains("chair"))
-            return "椅子";
-        else
-            return "障害物";
-    }
-    
+    #endregion
+
+    #region 5. 検出・判定メソッド（データ収集で使用）
     /// <summary>
     /// 重要なオブジェクト（TV、PC、椅子、テレビ台）の位置を取得
     /// </summary>
@@ -946,12 +458,8 @@ public class AccessibilityNarrator : MonoBehaviour
                     Vector3 playerPos = transform.position;
                     Vector3 diff = objectPos - playerPos;
                     
-                    // 座標表示が正常に動作することを確認済み
-                    
-                    // 座標表示を確実に修正
                     string xStr = diff.x >= 0 ? $"+{diff.x:F1}" : $"{diff.x:F1}";
                     string zStr = diff.z >= 0 ? $"+{diff.z:F1}" : $"{diff.z:F1}";
-                    // 台をPCプレートとして送信
                     string displayName = priority == "台" ? "PCプレート" : priority;
                     importantObjects.Add($"x方向に{xStr}、z方向に{zStr}に{displayName}");
                 }
@@ -963,12 +471,8 @@ public class AccessibilityNarrator : MonoBehaviour
                     Vector3 playerPos = transform.position;
                     Vector3 diff = objectPos - playerPos;
                     
-                    // 座標表示が正常に動作することを確認済み
-                    
-                    // 座標表示を確実に修正
                     string xStr = diff.x >= 0 ? $"+{diff.x:F1}" : $"{diff.x:F1}";
                     string zStr = diff.z >= 0 ? $"+{diff.z:F1}" : $"{diff.z:F1}";
-                    // 台をPCプレートとして送信
                     string displayPriority = priority == "台" ? "PCプレート" : priority;
                     string countText = GetCountText(displayPriority, positions.Count);
                     importantObjects.Add($"x方向に{xStr}、z方向に{zStr}に{countText}");
@@ -981,39 +485,269 @@ public class AccessibilityNarrator : MonoBehaviour
         
         return importantObjects;
     }
+
+    /// <summary>
+    /// 移動可能な方向のコマンドを取得
+    /// </summary>
+    private List<string> GetAvailableMovementCommands()
+    {
+        List<string> availableCommands = new List<string>();
+        
+        // 各方向をチェック
+        Vector3[] directions = {
+            Vector3.forward,  // +Z
+            Vector3.right,    // +X
+            Vector3.back,     // -Z
+            Vector3.left      // -X
+        };
+        
+        string[] directionNames = { "+Z", "+X", "-Z", "-X" };
+        
+        for (int i = 0; i < directions.Length; i++)
+        {
+            string obstacle = GetObstacleInDirection(directions[i]);
+            if (string.IsNullOrEmpty(obstacle))
+            {
+                availableCommands.Add(directionNames[i]);
+            }
+            // 利用不可のコマンドは表示しない
+        }
+        
+        return availableCommands;
+    }
+
+    /// <summary>
+    /// エリア到達チェック（ログ用）
+    /// </summary>
+    private void CheckAreaArrivalForLog(List<string> messages)
+    {
+        Vector3 currentPosition = transform.position;
+        PlayerPickupController pickup = GetComponent<PlayerPickupController>();
+        bool hasItem = pickup != null && pickup.carriedItem != null;
+        string heldItemName = hasItem ? pickup.carriedItem.itemName : "";
+        
+        // ChairArea到達チェック（椅子を持っている場合）
+        if (heldItemName.Contains("Chair") || heldItemName.Contains("椅子"))
+        {
+            Vector3 chairAreaCenter = new Vector3(5.48f, currentPosition.y, -3.69f);
+            float chairAreaDistance = Vector3.Distance(currentPosition, chairAreaCenter);
+            if (chairAreaDistance <= 2.5f)
+            {
+                messages.Add("ChairAreaに到達。椅子を置く準備が完了。");
+            }
+        }
+        
+        // PCプレート持参時のDaiArea到達チェック
+        if (heldItemName.Contains("Dai") || heldItemName.Contains("プレート"))
+        {
+            Vector3 daiAreaCenter = new Vector3(0.02f, currentPosition.y, 3.55f);
+            float daiAreaDistance = Vector3.Distance(currentPosition, daiAreaCenter);
+            if (daiAreaDistance <= 2.5f)
+            {
+                messages.Add("DaiAreaに到達。PCプレートを置く準備が完了。");
+            }
+        }
+        
+        // PC持参時のプレート上到達チェック
+        if (heldItemName.Contains("PC") || heldItemName.Contains("パソコン"))
+        {
+            Vector3 daiAreaCenter = new Vector3(0.02f, currentPosition.y, 3.55f);
+            float plateDistance = Vector3.Distance(currentPosition, daiAreaCenter);
+            if (plateDistance <= 2.0f)
+            {
+                messages.Add("PCプレートの上に到達。PCを置く準備が完了。");
+            }
+        }
+    }
     
     /// <summary>
-    /// 仮想エリア（ChairArea、DaiArea）の位置情報を追加
+    /// 近くのアイテム検出（ログ用）
     /// </summary>
-    private void AddVirtualAreas(List<string> importantObjects)
+    private void CheckNearbyItemsForLog(List<string> messages)
     {
-        Vector3 playerPos = transform.position;
-        
-        // ChairArea（X=5.48, Z=-3.69）の位置情報
-        Vector3 chairAreaPos = new Vector3(5.48f, playerPos.y, -3.69f);
-        float chairAreaDistance = Vector3.Distance(playerPos, chairAreaPos);
-        
-        // 一定範囲内にいる場合のみ表示（20メートル以内）
-        if (chairAreaDistance <= 20.0f)
+        if (pickupController != null && pickupController.currentNearbyItem != null && pickupController.carriedItem == null)
         {
-            Vector3 chairAreaDiff = chairAreaPos - playerPos;
-            string chairXStr = chairAreaDiff.x >= 0 ? $"+{chairAreaDiff.x:F1}" : $"{chairAreaDiff.x:F1}";
-            string chairZStr = chairAreaDiff.z >= 0 ? $"+{chairAreaDiff.z:F1}" : $"{chairAreaDiff.z:F1}";
-            importantObjects.Add($"x方向に{chairXStr}、z方向に{chairZStr}にChairArea");
+            string itemName = pickupController.currentNearbyItem.itemName;
+            float distance = Vector3.Distance(transform.position, pickupController.currentNearbyItem.transform.position);
+            
+            Vector3 directionVector = (pickupController.currentNearbyItem.transform.position - transform.position).normalized;
+            string direction = GetDirectionText(directionVector);
+            
+            string displayName = itemName == "Dai" ? "PCプレート" : itemName;
+            messages.Add($"{direction}約{distance:F1}メートルに{displayName}あり。pickupコマンドで持ち上げ可能");
+        }
+    }
+    
+    /// <summary>
+    /// 近くのTV検出（ログ用）
+    /// </summary>
+    private void CheckNearbyTVsForLog(List<string> messages)
+    {
+        if (pickupController != null && pickupController.currentNearbyTV != null)
+        {
+            string deviceName = pickupController.currentNearbyTV.deviceName;
+            bool isOn = pickupController.currentNearbyTV.IsOn();
+            float distance = Vector3.Distance(transform.position, pickupController.currentNearbyTV.GetButtonPosition());
+            
+            Vector3 directionVector = (pickupController.currentNearbyTV.GetButtonPosition() - transform.position).normalized;
+            string direction = GetDirectionText(directionVector);
+            
+            string stateText = isOn ? "ON" : "OFF";
+            messages.Add($"{direction}約{distance:F1}メートルに{deviceName}あり。{stateText}・interactコマンドで操作可能");
+        }
+    }
+
+    /// <summary>
+    /// 周辺のテーブルの位置を取得（3メートル範囲）
+    /// </summary>
+    private List<string> GetTablePositions()
+    {
+        List<string> tablePositions = new List<string>();
+        
+        // テーブルの名前リスト
+        string[] tableNames = { "Table_NW", "Table_SE", "Table_SW", "Table_NE" };
+        
+        foreach (string tableName in tableNames)
+        {
+            GameObject tableObj = GameObject.Find(tableName);
+            if (tableObj != null)
+            {
+                float distance = Vector3.Distance(transform.position, tableObj.transform.position);
+                if (distance <= 3.0f) // 3メートル範囲
+                {
+                    Vector3 diff = tableObj.transform.position - transform.position;
+                    string xStr = diff.x >= 0 ? $"+{diff.x:F1}" : $"{diff.x:F1}";
+                    string zStr = diff.z >= 0 ? $"+{diff.z:F1}" : $"{diff.z:F1}";
+                    string tableDescription = GetTableDescription(tableName);
+                    tablePositions.Add($"x方向に{xStr}、z方向に{zStr}に{tableDescription}");
+                }
+            }
         }
         
-        // DaiArea（X=0.02, Z=3.55）の位置情報
-        Vector3 daiAreaPos = new Vector3(0.02f, playerPos.y, 3.55f);
-        float daiAreaDistance = Vector3.Distance(playerPos, daiAreaPos);
+        return tablePositions;
+    }
+    #endregion
+
+    #region 6. ユーティリティメソッド（関連メソッドをグループ化）
+    #region 6.1 ドロップ関連
+    private string GetDropLocationInfo()
+    {
+        if (playerCamera == null) return "pickup（目の前に置く）";
         
-        // 一定範囲内にいる場合のみ表示（20メートル以内）
-        if (daiAreaDistance <= 20.0f)
+        // プレイヤーの前方1.5メートルの位置を基準とする
+        Vector3 dropPosition = transform.position + transform.forward * 1.5f;
+        
+        // 下方向にレイを飛ばして、置ける表面を探す
+        RaycastHit hit;
+        Vector3 rayOrigin = dropPosition + Vector3.up * 2f; // 2メートル上から
+        Vector3 rayDirection = Vector3.down;
+        
+        if (Physics.Raycast(rayOrigin, rayDirection, out hit, 4f, detectionLayer))
         {
-            Vector3 daiAreaDiff = daiAreaPos - playerPos;
-            string daiXStr = daiAreaDiff.x >= 0 ? $"+{daiAreaDiff.x:F1}" : $"{daiAreaDiff.x:F1}";
-            string daiZStr = daiAreaDiff.z >= 0 ? $"+{daiAreaDiff.z:F1}" : $"{daiAreaDiff.z:F1}";
-            importantObjects.Add($"x方向に{daiXStr}、z方向に{daiZStr}にDaiArea");
+            // 置く場所の種類を判定
+            string surfaceType = GetSurfaceType(hit.collider.gameObject);
+            
+            return $"pickup（{surfaceType}に置く）";
         }
+        else
+        {
+            // レイが何にも当たらない場合は、地面に置く予定として表示
+            return $"pickup（地面に置く）";
+        }
+    }
+
+    /// <summary>
+    /// ドロップした場所の詳細を取得
+    /// </summary>
+    private string GetDropLocationDetails(Vector3 dropPosition)
+    {
+        Vector3 direction = (dropPosition - transform.position).normalized;
+        string directionText = GetDirectionText(direction);
+        float distance = Vector3.Distance(transform.position, dropPosition);
+        string coordinates = $"座標X:{dropPosition.x:F1}, Z:{dropPosition.z:F1}";
+        
+        // 特定エリアの検出
+        string locationDetails = DetectSpecialArea(dropPosition);
+        if (!string.IsNullOrEmpty(locationDetails))
+        {
+            return $"{coordinates}、{locationDetails}";
+        }
+        
+        return $"{coordinates}、{directionText}約{distance:F1}メートル";
+    }
+    
+    private string GetSurfaceType(GameObject surface)
+    {
+        // まず現在のオブジェクトをチェック
+        string surfaceResult = CheckSurfaceTypeName(surface);
+        if (!string.IsNullOrEmpty(surfaceResult))
+        {
+            return surfaceResult;
+        }
+        
+        // 親オブジェクトをチェック
+        Transform parent = surface.transform.parent;
+        while (parent != null)
+        {
+            string parentResult = CheckSurfaceTypeName(parent.gameObject);
+            if (!string.IsNullOrEmpty(parentResult))
+            {
+                return parentResult;
+            }
+            parent = parent.parent;
+        }
+        
+        // どれにも該当しない場合
+        return $"{surface.name}の上";
+    }
+    
+    private string CheckSurfaceTypeName(GameObject obj)
+    {
+        string name = obj.name.ToLower();
+        
+        if (name.Contains("table"))
+            return "テーブルの上";
+        else if (name.Contains("desk"))
+            return "デスクの上";
+        else if (name.Contains("chairarea"))
+            return "椅子エリア";
+        else if (name.Contains("chair"))
+            return "椅子の上";
+        else if (name.Contains("daiarea"))
+            return "台エリア";
+        else if (name.Contains("dai"))
+            return "台の上";
+        else if (name.Contains("floor") || name.Contains("flore"))
+            return "床";
+        else if (name.Contains("ground"))
+            return "地面";
+        
+        // コンポーネントをチェックして詳細を取得
+        ItemPickup itemPickup = obj.GetComponent<ItemPickup>();
+        if (itemPickup != null)
+        {
+            return $"{itemPickup.itemName}の上";
+        }
+        
+        TVInteract tvInteract = obj.GetComponent<TVInteract>();
+        if (tvInteract != null)
+        {
+            return $"{tvInteract.deviceName}の上";
+        }
+        
+        // 該当しない場合は空文字列を返す
+        return "";
+    }
+    #endregion
+
+    #region 6.2 オブジェクト識別関連
+    /// <summary>
+    /// 重要なオブジェクトかどうかを判定
+    /// </summary>
+    private bool IsImportantObject(string objName)
+    {
+        return objName == "椅子" || objName == "運搬可能な椅子" || objName == "テレビ" || 
+               objName == "パソコン" || objName == "台" || objName == "テーブル";
     }
     
     /// <summary>
@@ -1100,7 +834,266 @@ public class AccessibilityNarrator : MonoBehaviour
         
         return "";
     }
+
+    private string GetObjectDescription(GameObject obj)
+    {
+        // まず親オブジェクトを確認して重要なオブジェクトかチェック
+        GameObject rootObject = GetRootImportantObject(obj);
+        if (rootObject != null)
+        {
+            return GetImportantObjectName(rootObject);
+        }
+        
+        string name = obj.name.ToLower();
+        
+        // 不要なオブジェクトを除外
+        if (name.Contains("wall") || name.Contains("floor") || name.Contains("flore"))
+            return ""; // 壁や床は除外
+        else if (name.Contains("cube") || name.Contains("cylinder") || name.Contains("sphere"))
+            return ""; // 基本的な形状オブジェクトは除外
+        else if (name.Contains("collider") || name.Contains("trigger"))
+            return ""; // コライダーは除外
+        else if (name.Contains("camera") || name.Contains("light"))
+            return ""; // カメラやライトは除外
+        
+        // それ以外は空文字列で除外
+        return "";
+    }
     
+    /// <summary>
+    /// 前方の障害物検出（机、TV等も含む）
+    /// </summary>
+    private string GetObjectDescriptionWithObstacles(GameObject obj)
+    {
+        string name = obj.name.ToLower();
+        
+        // まず親オブジェクトから確認（Cubeなどの場合）
+        Transform checkObject = obj.transform;
+        while (checkObject != null)
+        {
+            string checkName = checkObject.name.ToLower();
+            
+            // 正確なオブジェクト名に基づいて判定
+            if (checkName == "chairs" || checkName.StartsWith("chair"))
+                return "椅子";
+            else if (checkName == "tables" || checkName == "table" || checkName.StartsWith("table "))
+                return "テーブル";
+            else if (checkName == "pc")
+                return "パソコン";
+            else if (checkName == "tv")
+                return "テレビ";
+            else if (checkName == "dai")
+                return "台";
+            else if (checkName.Contains("wall"))
+                return "壁";
+            else if (checkName.Contains("door"))
+                return "ドア";
+            else if (checkName.Contains("desk"))
+                return "机";
+            
+            // ItemPickupコンポーネントがあるかチェック
+            ItemPickup itemPickup = checkObject.GetComponent<ItemPickup>();
+            if (itemPickup != null)
+            {
+                return itemPickup.itemName;
+            }
+            
+            // TVInteractコンポーネントがあるかチェック
+            TVInteract tvInteract = checkObject.GetComponent<TVInteract>();
+            if (tvInteract != null)
+            {
+                return tvInteract.deviceName;
+            }
+            
+            checkObject = checkObject.parent;
+        }
+        
+        // 除外するオブジェクト
+        if (name.Contains("floor") || name.Contains("flore"))
+            return ""; // 床は除外
+        else if (name.Contains("ground"))
+            return ""; // 地面は除外
+        else if (name.Contains("collider") || name.Contains("trigger"))
+            return ""; // コライダーは除外
+        
+        // その他の障害物として扱う
+        return obj.name;
+    }
+
+    /// <summary>
+    /// 障害物オブジェクトの名前を取得
+    /// </summary>
+    private string GetObstacleObjectName(GameObject obj)
+    {
+        // 重要なオブジェクトのルートを取得
+        GameObject rootObject = GetRootImportantObject(obj);
+        if (rootObject != null)
+        {
+            string importantName = GetImportantObjectName(rootObject);
+            if (!string.IsNullOrEmpty(importantName))
+            {
+                return importantName;
+            }
+        }
+        
+        // 一般的なオブジェクト名を取得
+        string objName = GetObjectDescription(obj);
+        if (!string.IsNullOrEmpty(objName))
+        {
+            return objName;
+        }
+        
+        // フォールバック：オブジェクト名そのまま
+        string name = obj.name.ToLower();
+        if (name.Contains("wall"))
+            return "壁";
+        else if (name.Contains("door"))
+            return "ドア";
+        else if (name.Contains("table"))
+            return "テーブル";
+        else if (name.Contains("chair"))
+            return "椅子";
+        else
+            return "障害物";
+    }
+    #endregion
+
+    #region 6.3 移動・障害物関連
+    /// <summary>
+    /// 指定した方向に移動可能かチェック
+    /// </summary>
+    private bool CanMoveInDirection(Vector3 direction)
+    {
+        return string.IsNullOrEmpty(GetObstacleInDirection(direction));
+    }
+    
+    /// <summary>
+    /// 指定した方向にある障害物の名前を取得（障害物がない場合は空文字を返す）
+    /// </summary>
+    private string GetObstacleInDirection(Vector3 direction)
+    {
+        // プレイヤーの現在位置から少し上の位置を起点とする（地面を避けるため）
+        Vector3 rayOrigin = transform.position + Vector3.up * 1.0f;
+        
+        // 指定された方向に1.5メートル先まで障害物がないかチェック
+        float checkDistance = 1.5f;
+        
+        RaycastHit hit;
+        if (Physics.Raycast(rayOrigin, direction, out hit, checkDistance, detectionLayer))
+        {
+            // ヒットしたオブジェクトが床や地面の場合はOK
+            string hitObjectName = hit.collider.name.ToLower();
+            if (hitObjectName.Contains("floor") || hitObjectName.Contains("flore") || hitObjectName.Contains("ground"))
+            {
+                // 床の場合は障害物ではない
+            }
+            else
+            {
+                // 障害物の名前を取得
+                string obstacleName = GetObstacleObjectName(hit.collider.gameObject);
+                if (!string.IsNullOrEmpty(obstacleName))
+                {
+                    return obstacleName;
+                }
+            }
+        }
+        
+        // 地面があるかもチェック（落下防止）- より緩い条件に変更
+        Vector3 groundCheckOrigin = transform.position + direction * checkDistance + Vector3.up * 1.0f;
+        if (!Physics.Raycast(groundCheckOrigin, Vector3.down, 3.0f, detectionLayer))
+        {
+            // 地面がない場合は移動不可（室内なので壁として扱う）
+            return "壁";
+        }
+        
+        return ""; // 障害物なし
+    }
+    #endregion
+
+    #region 6.4 その他ヘルパー
+    /// <summary>
+    /// 特定エリア（ChairArea、DaiAreaなど）の検出
+    /// </summary>
+    private string DetectSpecialArea(Vector3 position)
+    {
+        // ChairArea（X=5.48, Z=-3.69）付近の検出
+        Vector3 chairAreaCenter = new Vector3(5.48f, position.y, -3.69f);
+        float chairAreaDistance = Vector3.Distance(position, chairAreaCenter);
+        if (chairAreaDistance <= 2.0f)
+        {
+            return "ChairArea付近";
+        }
+        
+        // DaiArea（X=0.02, Z=3.55）付近の検出
+        Vector3 daiAreaCenter = new Vector3(0.02f, position.y, 3.55f);
+        float daiAreaDistance = Vector3.Distance(position, daiAreaCenter);
+        if (daiAreaDistance <= 2.0f)
+        {
+            return "DaiArea付近";
+        }
+        
+        return "";
+    }
+
+    /// <summary>
+    /// 仮想エリア（ChairArea、DaiArea）の位置情報を追加
+    /// </summary>
+    private void AddVirtualAreas(List<string> importantObjects)
+    {
+        Vector3 playerPos = transform.position;
+        
+        // ChairArea（X=5.48, Z=-3.69）の位置情報
+        Vector3 chairAreaPos = new Vector3(5.48f, playerPos.y, -3.69f);
+        float chairAreaDistance = Vector3.Distance(playerPos, chairAreaPos);
+        
+        // 一定範囲内にいる場合のみ表示（20メートル以内）
+        if (chairAreaDistance <= 20.0f)
+        {
+            Vector3 chairAreaDiff = chairAreaPos - playerPos;
+            string chairXStr = chairAreaDiff.x >= 0 ? $"+{chairAreaDiff.x:F1}" : $"{chairAreaDiff.x:F1}";
+            string chairZStr = chairAreaDiff.z >= 0 ? $"+{chairAreaDiff.z:F1}" : $"{chairAreaDiff.z:F1}";
+            importantObjects.Add($"x方向に{chairXStr}、z方向に{chairZStr}にChairArea");
+        }
+        
+        // DaiArea（X=0.02, Z=3.55）の位置情報
+        Vector3 daiAreaPos = new Vector3(0.02f, playerPos.y, 3.55f);
+        float daiAreaDistance = Vector3.Distance(playerPos, daiAreaPos);
+        
+        // 一定範囲内にいる場合のみ表示（20メートル以内）
+        if (daiAreaDistance <= 20.0f)
+        {
+            Vector3 daiAreaDiff = daiAreaPos - playerPos;
+            string daiXStr = daiAreaDiff.x >= 0 ? $"+{daiAreaDiff.x:F1}" : $"{daiAreaDiff.x:F1}";
+            string daiZStr = daiAreaDiff.z >= 0 ? $"+{daiAreaDiff.z:F1}" : $"{daiAreaDiff.z:F1}";
+            importantObjects.Add($"x方向に{daiXStr}、z方向に{daiZStr}にDaiArea");
+        }
+    }
+
+    private string GetDirectionText(Vector3 direction)
+    {
+        // より正確な座標差分表記
+        float x = direction.x;
+        float z = direction.z;
+        
+        // 主要な方向を判定
+        if (Mathf.Abs(x) > Mathf.Abs(z))
+        {
+            // X方向が主要
+            if (x > 0)
+                return z > 0.1f ? "+X+Z" : z < -0.1f ? "+X-Z" : "+X";
+            else
+                return z > 0.1f ? "-X+Z" : z < -0.1f ? "-X-Z" : "-X";
+        }
+        else
+        {
+            // Z方向が主要
+            if (z > 0)
+                return x > 0.1f ? "+X+Z" : x < -0.1f ? "-X+Z" : "+Z";
+            else
+                return x > 0.1f ? "+X-Z" : x < -0.1f ? "-X-Z" : "-Z";
+        }
+    }
+
     /// <summary>
     /// オブジェクトの種類に応じた数量表現を取得
     /// </summary>
@@ -1123,37 +1116,7 @@ public class AccessibilityNarrator : MonoBehaviour
                 return count == 1 ? objectType : $"{objectType}{count}個";
         }
     }
-    
-    /// <summary>
-    /// 周辺のテーブルの位置を取得（2メートル範囲）
-    /// </summary>
-    private List<string> GetTablePositions()
-    {
-        List<string> tablePositions = new List<string>();
-        
-        // テーブルの名前リスト
-        string[] tableNames = { "Table_NW", "Table_SE", "Table_SW", "Table_NE" };
-        
-        foreach (string tableName in tableNames)
-        {
-            GameObject tableObj = GameObject.Find(tableName);
-            if (tableObj != null)
-            {
-                float distance = Vector3.Distance(transform.position, tableObj.transform.position);
-                if (distance <= 3.0f) // 3メートル範囲
-                {
-                    Vector3 diff = tableObj.transform.position - transform.position;
-                    string xStr = diff.x >= 0 ? $"+{diff.x:F1}" : $"{diff.x:F1}";
-                    string zStr = diff.z >= 0 ? $"+{diff.z:F1}" : $"{diff.z:F1}";
-                    string tableDescription = GetTableDescription(tableName);
-                    tablePositions.Add($"x方向に{xStr}、z方向に{zStr}に{tableDescription}");
-                }
-            }
-        }
-        
-        return tablePositions;
-    }
-    
+
     /// <summary>
     /// テーブル名から説明を取得
     /// </summary>
@@ -1173,107 +1136,10 @@ public class AccessibilityNarrator : MonoBehaviour
                 return "テーブル";
         }
     }
-    
-    // コマンド実行完了を通知するメソッド
-    public void OnCommandCompleted()
-    {
-        // コマンド実行完了をログに出力
-        Debug.Log("[Narrator] コマンド実行完了");
-        
-        // エリア到達チェック（移動後に特定エリアに到達したかを確認）
-        CheckAreaArrival();
-        
-        // LLMCommunicatorに通知
-        if (LLMCommunicator.Instance != null)
-        {
-            LLMCommunicator.Instance.OnCommandCompleted();
-        }
-    }
-    
-    /// <summary>
-    /// プレイヤーが特定エリアに到達した際のメッセージ出力
-    /// </summary>
-    public void CheckAreaArrival()
-    {
-        if (!enableActionNarration) return;
-        
-        Vector3 currentPosition = transform.position;
-        
-        // 持っているアイテムを確認
-        PlayerPickupController pickup = GetComponent<PlayerPickupController>();
-        bool hasItem = pickup != null && pickup.carriedItem != null;
-        string heldItemName = hasItem ? pickup.carriedItem.itemName : "";
-        
-        // ChairArea到達チェック（椅子を持っている場合）
-        if (heldItemName.Contains("Chair") || heldItemName.Contains("椅子"))
-        {
-            Vector3 chairAreaCenter = new Vector3(5.48f, currentPosition.y, -3.69f);
-            float chairAreaDistance = Vector3.Distance(currentPosition, chairAreaCenter);
-            if (chairAreaDistance <= 2.5f)
-            {
-                Debug.Log("[Narrator] ChairAreaに到達しました。椅子を置く準備が完了しました。");
-            }
-        }
-        
-        // ChairArea到達チェック（椅子を置いた後、何も持っていない場合）
-        if (string.IsNullOrEmpty(heldItemName))
-        {
-            Vector3 chairAreaCenter = new Vector3(5.48f, currentPosition.y, -3.69f);
-            float chairAreaDistance = Vector3.Distance(currentPosition, chairAreaCenter);
-            if (chairAreaDistance <= 2.5f)
-            {
-                Debug.Log("[Narrator] ChairAreaに到達しました。椅子を置く作業が完了しました。");
-            }
-        }
-        
-        // PCプレートに近づいた時のチェック（何も持っていない場合）
-        if (string.IsNullOrEmpty(heldItemName))
-        {
-            // PCプレート（Dai）の位置を確認
-            if (pickupController != null && pickupController.currentNearbyItem != null && pickupController.currentNearbyItem.itemName == "Dai")
-            {
-                float plateDistance = Vector3.Distance(currentPosition, pickupController.currentNearbyItem.transform.position);
-                if (plateDistance <= 2.5f)
-                {
-                    Debug.Log("[Narrator] PCプレートに到達しました。PCプレートを拾う準備が完了しました。");
-                }
-            }
-        }
-        
-        // DaiArea到達チェック（PCプレートを持っている場合）
-        if (heldItemName.Contains("Plate") || heldItemName.Contains("プレート"))
-        {
-            Vector3 daiAreaCenter = new Vector3(0.02f, currentPosition.y, 3.55f);
-            float daiAreaDistance = Vector3.Distance(currentPosition, daiAreaCenter);
-            if (daiAreaDistance <= 2.5f)
-            {
-                Debug.Log("[Narrator] DaiAreaに到達しました。PCプレートを置く準備が完了しました。");
-            }
-        }
-        
-        // プレート上到達チェック（PCを持っている場合）
-        if (heldItemName.Contains("PC") || heldItemName.Contains("パソコン") || heldItemName.Contains("Computer"))
-        {
-            Vector3 daiAreaCenter = new Vector3(0.02f, currentPosition.y, 3.55f);
-            float plateDistance = Vector3.Distance(currentPosition, daiAreaCenter);
-            if (plateDistance <= 2.0f)
-            {
-                Debug.Log("[Narrator] PCプレートの上に到達しました。PCを置く準備が完了しました。");
-            }
-        }
-        
-        // DaiArea到達チェック（PCプレートを置いた後、何も持っていない場合）
-        if (string.IsNullOrEmpty(heldItemName))
-        {
-            Vector3 daiAreaCenter = new Vector3(0.02f, currentPosition.y, 3.55f);
-            float daiAreaDistance = Vector3.Distance(currentPosition, daiAreaCenter);
-            if (daiAreaDistance <= 2.5f)
-            {
-                Debug.Log("[Narrator] DaiAreaに到達しました。PCプレートを置く作業が完了しました。");
-            }
-        }
-    }
-    
+    #endregion
+    #endregion
+
+    #region 7. デバッグ用メソッド
     void OnDrawGizmosSelected()
     {
         // エディタで検出範囲を表示
@@ -1317,4 +1183,5 @@ public class AccessibilityNarrator : MonoBehaviour
             Gizmos.DrawRay(rayOrigin, directions[i] * checkDistance);
         }
     }
-} 
+    #endregion
+}

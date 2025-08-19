@@ -1,3 +1,4 @@
+// プレイヤーのアイテム拾い、置き、TVの操作を制御
 using UnityEngine;
 using StarterAssets;
 
@@ -31,6 +32,12 @@ public class PlayerPickupController : MonoBehaviour
     
     void Update()
     {
+        // コマンド実行中は検出処理を停止
+        if (AccessibilityNarrator.Instance != null && AccessibilityNarrator.Instance.IsCommandExecuting())
+        {
+            return;
+        }
+        
         // 近くのアイテムを検出
         CheckForNearbyItems();
         
