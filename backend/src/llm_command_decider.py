@@ -14,7 +14,7 @@ try:
         get_task_description, get_task_dependencies,
         get_task_examples, get_task_example
     )
-    from analysis_storage import storage
+    from storage import storage
 except ImportError:
     # 開発環境でのインポート
     from .task_definitions import (
@@ -22,7 +22,7 @@ except ImportError:
         get_task_description, get_task_dependencies,
         get_task_examples, get_task_example
     )
-    from .analysis_storage import storage
+    from .storage import storage
 
 # ログレベル設定
 logging.basicConfig(level=logging.INFO)
@@ -102,19 +102,13 @@ class LLMCommandDecider:
         Step1: ログとタスクの分析・管理
         DAGとタスクの現状分析、過去の分析結果との統合、タスクレベルの決定を行う
         """
-        # 現在のタスク状況を取得
-        available_tasks = get_available_tasks()
-        progress_summary = get_task_progress_summary()
-        current_state = storage.get_current_state()
+        # タスク定義を取得
+        tasks = get_tasks()
+        dependencies = get_dependencies()
+        task_examples = get_task_examples()
         
-        # 過去の分析結果を取得（最新10件）
-        recent_analyses = storage.get_recent_analyses(limit=10)
-        
-        # 現在のタスクに関連する過去の分析を取得
-        current_task = get_next_available_task()
-        task_specific_analyses = []
-        if current_task:
-            task_specific_analyses = storage.get_analyses_by_task(current_task)
+        # 過去のコマンド履歴を取得
+        recent_commands = storage.get_recent_commands(limit=10)
         
         system_prompt = """
         あなたはDAGベースのタスク分析・管理の専門家です。以下の情報を包括的に分析し、DAGで定義されたタスクの現状を整理してください。

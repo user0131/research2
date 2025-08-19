@@ -5,7 +5,7 @@ import os
 import logging
 from datetime import datetime
 from llm_command_decider import LLMCommandDecider
-from log_manager import LogManager
+from storage import storage
 from task_definitions import (
     get_goal, get_tasks, get_dependencies, 
     get_task_description, get_task_dependencies,
@@ -33,7 +33,6 @@ def get_openai_client():
 
 # インスタンス生成
 command_decider = LLMCommandDecider()
-log_manager = LogManager()
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -58,13 +57,13 @@ def process_logs():
         openai_client = get_openai_client()
         
         # 過去のログコンテキストを取得
-        log_context = log_manager.get_context_for_llm(logs)
+        log_context = storage.get_context_for_llm(logs)
         
         # LLMでコマンドを決定（新しい3段階システム）
         result = command_decider.analyze_logs_and_decide(logs, openai_client, log_context)
         
         # ログエントリを保存
-        log_manager.add_log_entry(
+        storage.add_log_entry(
             logs=logs,
             command=result["command"],
             reasoning=result["reasoning"],
@@ -101,7 +100,7 @@ def get_logs():
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
         
-        logs = log_manager.get_logs(page=page, per_page=per_page)
+        logs = storage.get_recent_commands(count=per_page)
         
         return jsonify({
             "logs": logs,
@@ -118,7 +117,7 @@ def get_logs():
 def get_log_stats():
     """ログ統計を取得"""
     try:
-        stats = log_manager.get_statistics()
+        stats = storage.get_statistics()
         return jsonify({
             "statistics": stats,
             "timestamp": datetime.now().isoformat()
@@ -151,7 +150,7 @@ def get_task_status():
 def clear_logs():
     """ログをクリア"""
     try:
-        log_manager.clear_logs()
+        storage.clear_all()
         return jsonify({
             "message": "ログがクリアされました",
             "timestamp": datetime.now().isoformat()
@@ -164,7 +163,7 @@ def clear_logs():
 def export_logs():
     """ログをエクスポート"""
     try:
-        export_data = log_manager.export_logs()
+        export_data = storage.export_data()
         return jsonify({
             "export_data": export_data,
             "timestamp": datetime.now().isoformat()
@@ -177,7 +176,7 @@ def export_logs():
 def get_log_context():
     """ログコンテキストを取得"""
     try:
-        context = log_manager.get_context_for_llm()
+        context = storage.get_context_for_llm()
         return jsonify({
             "context": context,
             "timestamp": datetime.now().isoformat()
@@ -190,7 +189,8 @@ def get_log_context():
 def get_task_progress():
     """タスクの進捗状況を取得"""
     try:
-        progress = log_manager.get_task_progress_summary()
+        # タスクの進捗は新しいシステムでは不要
+        progress = {"message": "Task progress moved to new system"}
         return jsonify({
             "progress": progress,
             "timestamp": datetime.now().isoformat()
