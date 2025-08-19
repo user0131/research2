@@ -10,8 +10,8 @@ public class CommandExecutor : MonoBehaviour
 {
     [Header("Dependencies")]
     public StarterAssetsInputs inputSystem; // 人間と同じ入力システム
-    public PlayerPickupController pickupController; // アイテム操作（参照のみ）
-    public NavMeshAgentController navMeshController; // AI専用の座標移動
+    public PlayerPickupController pickupController; // アイテム操作
+    public NavMeshAgentController navMeshController; // AI専用の座標移動。目的地まで移動を遂行する（内部でNavMeshAgentを使用している）
     
     [Header("Movement Settings")]
     public float movementDistance = 0.5f; // 移動コマンドの移動距離（単位）
@@ -229,7 +229,7 @@ public class CommandExecutor : MonoBehaviour
     }
     #endregion
 
-    #region 5. AI専用機能（NavMeshAgent）
+    #region 5. AI専用機能（NavMeshAgentで、目的地に移動(NavMeshAgentControllerで実行)）
     /// <summary>
     /// 座標指定移動（NavMeshAgent使用）
     /// </summary>
