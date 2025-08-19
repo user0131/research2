@@ -1188,7 +1188,7 @@ NavMeshObstacle:
   m_Shape: 1
   m_Extents: {x: 0.349, y: 0.54200006, z: 0.27600002}
   m_MoveThreshold: 0.1
-  m_Carve: 0
+  m_Carve: 1
   m_CarveOnlyStationary: 1
   m_Center: {x: 0, y: 0.54700005, z: 0.09200001}
   m_TimeToStationary: 0.5
@@ -1534,7 +1534,7 @@ NavMeshObstacle:
   m_Shape: 1
   m_Extents: {x: 0.194, y: 0.14600001, z: 0.20300001}
   m_MoveThreshold: 0.1
-  m_Carve: 0
+  m_Carve: 1
   m_CarveOnlyStationary: 1
   m_Center: {x: 0.056, y: 0.147, z: 0}
   m_TimeToStationary: 0.5
@@ -1878,7 +1878,6 @@ GameObject:
   - component: {fileID: 939121847}
   - component: {fileID: 939121846}
   - component: {fileID: 939121844}
-  - component: {fileID: 939121849}
   - component: {fileID: 939121848}
   m_Layer: 0
   m_Name: LLMGameManager
@@ -1900,7 +1899,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   inputSystem: {fileID: 1888331193}
-  interactionController: {fileID: 939121849}
+  interactionController: {fileID: 0}
   navMeshController: {fileID: 939121848}
   movementDistance: 0.5
   actionPressDuration: 0.1
@@ -1950,23 +1949,6 @@ MonoBehaviour:
   navigationSpeed: 3.5
   stoppingDistance: 0.5
   rotationSpeed: 120
---- !u!114 &939121849
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 939121843}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ece4fab566f8841f59f871a0a6925970, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  pickupRange: 2
-  pickupLayer:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  carryPosition: {fileID: 0}
 --- !u!4 &986734872 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 8e0602e600dccf7418777f381a8dd7dc, type: 3}
@@ -2175,6 +2157,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1676887996}
     m_Modifications:
+    - target: {fileID: 3627393060026061839, guid: 6d697dba22f4c4f27b412685f0b34b96, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6178720766075477646, guid: 6d697dba22f4c4f27b412685f0b34b96, type: 3}
       propertyPath: m_LocalPosition.x
       value: -5.9199896
@@ -2653,7 +2639,7 @@ MonoBehaviour:
   itemName: Dai
   carryOffset: {x: 0, y: 0.1, z: 0.1}
   usePhysics: 1
---- !u!114 &1877289660
+--- !u!114 &1877289663
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -2667,7 +2653,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   autoDetectSize: 1
   showDebugLogs: 0
---- !u!208 &1877289661
+--- !u!208 &1877289664
 NavMeshObstacle:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -3209,6 +3195,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: dai
       objectReference: {fileID: 0}
+    - target: {fileID: 6737550995243079957, guid: 5cf8a2a67e0634d2f972920804dcff73, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6846030246362957273, guid: 5cf8a2a67e0634d2f972920804dcff73, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.11
@@ -3236,10 +3226,10 @@ PrefabInstance:
       addedObject: {fileID: 1877289658}
     - targetCorrespondingSourceObject: {fileID: 6066709493998819195, guid: 5cf8a2a67e0634d2f972920804dcff73, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1877289661}
+      addedObject: {fileID: 1877289664}
     - targetCorrespondingSourceObject: {fileID: 6066709493998819195, guid: 5cf8a2a67e0634d2f972920804dcff73, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1877289660}
+      addedObject: {fileID: 1877289663}
     - targetCorrespondingSourceObject: {fileID: 2872581332634534879, guid: 5cf8a2a67e0634d2f972920804dcff73, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1830274195}
