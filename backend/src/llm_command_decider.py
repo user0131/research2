@@ -9,20 +9,18 @@ import logging
 from typing import Dict, List, Optional
 try:
     # Docker環境でのインポート
-    from research_room_tasks import (
-        task_details, dependencies, task_dag,
-        mark_task_completed, is_task_completed, get_next_available_task,
-        get_task_progress_summary, check_task_completion_criteria,
-        get_current_task_group, get_task_group_progress, get_available_tasks
+    from task_definitions import (
+        get_goal, get_tasks, get_dependencies, 
+        get_task_description, get_task_dependencies,
+        get_task_examples, get_task_example
     )
     from analysis_storage import storage
 except ImportError:
     # 開発環境でのインポート
-    from .research_room_tasks import (
-        task_details, dependencies, task_dag,
-        mark_task_completed, is_task_completed, get_next_available_task,
-        get_task_progress_summary, check_task_completion_criteria,
-        get_current_task_group, get_task_group_progress, get_available_tasks
+    from .task_definitions import (
+        get_goal, get_tasks, get_dependencies, 
+        get_task_description, get_task_dependencies,
+        get_task_examples, get_task_example
     )
     from .analysis_storage import storage
 
@@ -149,11 +147,16 @@ class LLMCommandDecider:
         - タスク完了条件の達成状況
 
         ## 判定ルール（コマンド準備状況）
-        - **interaction_ready**: 利用可能なコマンドに「interact」が含まれている場合はtrue
+        **重要**: 必ずUnityから送信された「可能なコマンド」リストのみを参照してください
+        
+        - **interaction_ready**: Unityの「可能なコマンド」に「interact」が明示的に含まれている場合のみtrue
         - **pickup_ready**: 以下を満たす場合のみtrue
-          * pickup（アイテムを拾う）：pickupコマンドが利用可能
-          * pickup（床に置く）：目標位置に近づいており、pickupコマンドが利用可能
+          * Unityの「可能なコマンド」に「pickup」が明示的に含まれている
+          * かつ、pickupが必要な状況（アイテムを拾う/置く）である
         - **movement_needed**: 上記が両方falseの場合のみtrue
+        
+        **注意**: コマンドの可用性は必ずUnityログの「可能なコマンド」セクションで確認してください。
+        このリストに含まれていないコマンドは使用できません。
 
         ## 出力形式
         以下のJSON形式で包括的な分析結果を出力してください：
@@ -387,16 +390,19 @@ class LLMCommandDecider:
 
         1. **interact優先**: 
            - Step1でinteraction_ready == trueの場合 → **必ず "interact"**
+           - **但し**: Unityログで「interact」が利用可能コマンドに含まれている場合のみ
 
         2. **pickup優先**:
            - Step1でpickup_ready == trueの場合 → **必ず "pickup"**
+           - **但し**: Unityログで「pickup」が利用可能コマンドに含まれている場合のみ
 
         3. **移動のみ**:
            - 上記のinteractとpickupが両方ともfalseの場合のみ移動コマンドを選択
            - target_positionから数値計算を実行
            - 絶対値比較で大きい方の方向を選択
 
-        **重要**: pickup_ready や interaction_ready が true の場合、移動は一切行わない
+        **最重要**: コマンドを決定する前に、必ずUnityから送信された利用可能コマンドリストを確認してください。
+        リストに含まれていないコマンドは絶対に選択しないでください。
 
         ## 移動方向の計算方法（必須）
         移動が必要な場合は、以下の手順で必ず計算してください：
@@ -511,11 +517,20 @@ class LLMCommandDecider:
         response_text = response.choices[0].message.content
         result = self._extract_json_from_response(response_text)
         
+        # Step1の結果から実際に利用可能なコマンドを取得
+        available_commands = step1_result.get("available_commands", [])
+        
         # コマンドの妥当性をチェック
-        if result.get("command") not in self.valid_commands:
-            logger.warning(f"Invalid command: {result.get('command')}, defaulting to wait")
+        selected_command = result.get("command")
+        if selected_command not in self.valid_commands:
+            logger.warning(f"Invalid command (not in valid_commands): {selected_command}, defaulting to wait")
             result["command"] = "wait"
-            result["reasoning"] = f"無効なコマンドのため待機: {result.get('command')}"
+            result["reasoning"] = f"無効なコマンド（システムで未定義）のため待機: {selected_command}"
+        elif selected_command not in available_commands and selected_command != "wait":
+            # Unityから送信された利用可能コマンドリストにも含まれていない場合
+            logger.warning(f"Command not available in Unity: {selected_command}, available: {available_commands}")
+            result["command"] = "wait"
+            result["reasoning"] = f"Unityで利用不可能なコマンドのため待機: {selected_command}（利用可能: {available_commands}）"
         
         return result
 

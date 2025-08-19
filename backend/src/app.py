@@ -6,10 +6,10 @@ import logging
 from datetime import datetime
 from llm_command_decider import LLMCommandDecider
 from log_manager import LogManager
-from research_room_tasks import (
-    get_task_progress_summary, reset_all_tasks, 
-    mark_task_completed, get_next_available_task,
-    get_current_task_group, get_task_group_progress
+from task_definitions import (
+    get_goal, get_tasks, get_dependencies, 
+    get_task_description, get_task_dependencies,
+    get_task_examples, get_task_example
 )
 
 # ログ設定
@@ -131,22 +131,15 @@ def get_log_stats():
 def get_task_status():
     """タスクの状況を取得（細分化されたタスク対応）"""
     try:
-        from research_room_tasks import dependencies, task_dag, task_details
-        
-        # 現在のタスク情報を取得
-        progress = get_task_progress_summary()
-        next_task = get_next_available_task()
-        current_group = get_current_task_group()
-        group_progress = get_task_group_progress(current_group) if current_group != "completed" else None
+        # タスク定義情報を取得
+        dependencies = get_dependencies()
+        tasks = get_tasks()
+        goal = get_goal()
         
         return jsonify({
+            "goal": goal,
+            "tasks": tasks,
             "dependencies": dependencies,
-            "task_dag": task_dag,
-            "task_details": task_details,
-            "current_progress": progress,
-            "next_task": next_task,
-            "current_group": current_group,
-            "group_progress": group_progress,
             "timestamp": datetime.now().isoformat()
         })
         
