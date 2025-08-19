@@ -40,10 +40,18 @@ public class ItemPickup : MonoBehaviour
         
         _isPickedUp = true;
         
-        SetupParentRelation(parent);
+        // プレイヤーの子オブジェクトにする
+        transform.SetParent(parent);
+        
+        // 物理演算を無効にする
         DisablePhysics();
+        
+        // コライダーを無効にする
         DisableCollision();
-        SetCarryPosition();
+        
+        // プレイヤーの胸元近くに配置（直接設定）
+        transform.localPosition = new Vector3(0, 0.1f, 0.1f);
+        transform.localRotation = Quaternion.identity;
     }
     
     /// <summary>
