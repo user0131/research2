@@ -1,0 +1,39 @@
+# Docker Compose のファイル形式のバージョン。新しい構文や機能が使える3.8を指定。
+version: '3.8'
+
+services:
+# 動かすコンテナの一覧。この例では unity-llm-backend という1つのサービスがある。
+  unity-llm-backend:
+    # 現在のディレクトリ（.）にある Dockerfile を元にコンテナイメージをビルド
+    build: .
+    # "5000:5000" → ホストの5000番ポートをコンテナの5000番に転送（Flask APIを外部から呼び出せるようにする）。
+    ports:
+      - "5000:5000"
+    # 環境変数設定。OPENAI_API_KEYはホストの環境変数から引き継ぎ、FLASK_ENV=developmentでFlaskを開発モードに
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - FLASK_ENV=development
+    # ホストのカレントディレクトリをコンテナ内の /app にマウント
+    volumes:
+      - .:/app
+    # コンテナの起動ポリシー。ここではコンテナが停止した場合に自動で再起動するよう設定（クラッシュ時やサーバー再起動後も復旧）。
+    restart: unless-stopped
+    # コンテナの稼働確認設定。
+    healthcheck:
+      # コンテナのヘルスチェックコマンド。ここではcurlを使ってFlask APIのヘルスチェックエンドポイントにアクセス
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      # ヘルスチェックの設定。ここでは30秒ごとにチェックし、10秒以内に応答がない場合は失敗とみなす。
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # ヘルスチェックの開始までの猶予時間。ここではコンテナ起動から40秒後に初回チェックを行う。
+      start_period: 40s
+    # unity-llm-network に接続して他サービスと通信可能にする。
+    networks:
+      - unity-llm-network
+# Docker コンテナ同士をつなぐ「専用ネットワーク」を作る設定
+# Docker コンテナはデフォルトだと別々の空間にいるので、直接名前で呼び出せない。bridge ネットワークを作ると、そのネットワークに属するコンテナ同士はIPアドレスを気にせず、サービス名で通信できる。
+networks:
+  unity-llm-network:
+  # Docker が作る「仮想LAN」
+    driver: bridge 

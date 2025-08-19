@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: bd6c6f3e6a819354f83dd16ff3a85589
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 297945
+  packageName: Simple Chair
+  packageVersion: 1.0
+  assetPath: Assets/MarioParadiso/Chair/Built-in/Materials/Chair.mat
+  uploadId: 699196

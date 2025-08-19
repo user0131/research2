@@ -1,0 +1,26 @@
+[
+  {
+    "step": "step1_analysis",
+    "dag_analysis": {
+      "current_task_in_dag": "step1_tv_operate"
+    },
+    "task_decision": {
+      "selected_task": "step1_tv_operate"
+    },
+    "current_situation": {
+      "player_position": {
+        "x": 0,
+        "z": 0
+      }
+    },
+    "action_analysis": {
+      "interaction_ready": false
+    },
+    "historical_integration": {},
+    "situation_summary": "テスト分析結果",
+    "progress": {},
+    "current_task": null,
+    "timestamp": "2025-07-18T15:38:34.597136",
+    "analysis_id": "analysis_20250718_153834"
+  }
+]
