@@ -72,13 +72,36 @@ public class LLMCommunicator : MonoBehaviour
         
         if (enableDebugLogs)
         {
-            Debug.Log("[LLMCommunicator] ログ管理システムを開始しました（コマンド完了時のみ送信）");
+            Debug.Log("[LLMCommunicator] ログ管理システムを開始しました");
         }
+        
+        // 初期化時に最初のログをバックエンドに送信
+        StartCoroutine(SendInitialLogs());
     }
     
     void OnDestroy()
     {
         StopAllCoroutines();
+    }
+    
+    /// <summary>
+    /// 初期化時にログを送信する（コマンド完了を待たずに）
+    /// </summary>
+    private IEnumerator SendInitialLogs()
+    {
+        // 少し待機してからログを収集（他のコンポーネントの初期化を待つ）
+        yield return new WaitForSeconds(1.0f);
+        
+        if (enableDebugLogs)
+        {
+            Debug.Log("[LLMCommunicator] 初期ログ送信開始");
+        }
+        
+        // 初期ログを収集してバックエンドに送信
+        if (logManager != null && !isProcessingRequest)
+        {
+            RequestSituationLogs();
+        }
     }
     #endregion
 
@@ -107,9 +130,12 @@ public class LLMCommunicator : MonoBehaviour
     {
         isProcessingRequest = true;
         
-        // リクエストデータの作成
+        // ログを1つの文字列に結合（改行で区切る）
+        string combinedLog = string.Join("\n", logs);
+        
+        // リクエストデータの作成（1つの文字列として格納）
         LogRequest request = new LogRequest();
-        request.logs = new List<string>(logs);
+        request.logs = new List<string> { combinedLog };
         
         string jsonData = JsonUtility.ToJson(request);
         
@@ -178,7 +204,19 @@ public class LLMCommunicator : MonoBehaviour
         {
             if (enableDebugLogs)
             {
-                Debug.Log($"[LLMCommunicator] ログ収集完了 - バックエンドに送信（{situationLogs.Count}件）");
+                // バックエンドに送信されるのと同じ内容を表示
+                System.Text.StringBuilder logBuilder = new System.Text.StringBuilder();
+                logBuilder.AppendLine($"[LLMCommunicator] ログ収集完了 - バックエンドに送信（{situationLogs.Count}件）");
+                logBuilder.AppendLine("=== バックエンド送信内容（1つの文字列として送信） ===");
+                
+                // 実際に送信される形式で表示
+                string combinedLog = string.Join("\n", situationLogs);
+                logBuilder.AppendLine(combinedLog);
+                
+                logBuilder.AppendLine("=======================");
+                
+                // まとめて1回で出力
+                Debug.Log(logBuilder.ToString());
             }
             
             // 収集したログをバックエンドに送信
