@@ -28,14 +28,19 @@ TASK_EXAMPLES = {
             "navigate: テレビの位置（X=0.0, Z=10.2）に移動する",
             "interact: テレビの電源をONにする"
         ],
-        "example_response": {
-            "command": "navigate",
-            "x": 0.1,
-            "y": 0.0,
-            "z": 5.4,
-            "reasoning": "テレビ（座標X=0.0, Z=10.2）に向かって移動"
-        },
-        "completion_criteria": "テレビが点灯し、操作完了メッセージが表示される"
+        "example_command_sequence": [
+            {
+                "command": "navigate",
+                "x": 0.1,
+                "y": 0.0,
+                "z": 5.4,
+                "reasoning": "テレビに隣接してinteractコマンドが使用可能になる"
+            },
+            {
+                "command": "interact",
+                "reasoning": "テレビが点灯し操作完了メッセージが表示される"
+            }
+        ]
     },
     
     "chair_move": {
@@ -46,14 +51,30 @@ TASK_EXAMPLES = {
             "navigate: ChairArea（X=5.48, Z=-3.69）に移動する",
             "pickup: 椅子を置く"
         ],
-        "example_response": {
-            "command": "navigate",
-            "x": -3.1,
-            "y": 0.0,
-            "z": -0.5,
-            "reasoning": "椅子（座標X=-3.2, Z=-0.6）に向かって移動"
-        },
-        "completion_criteria": "椅子がChairAreaに配置され、手から離れる"
+        "example_command_sequence": [
+            {
+                "command": "navigate",
+                "x": -3.1,
+                "y": 0.0,
+                "z": -0.5,
+                "reasoning": "椅子に隣接してpickupコマンドが使用可能になる"
+            },
+            {
+                "command": "pickup",
+                "reasoning": "椅子を持っている状態になる"
+            },
+            {
+                "command": "navigate",
+                "x": 5.5,
+                "y": 0.0,
+                "z": -3.6,
+                "reasoning": "ChairArea付近に到達してpickupコマンドが使用可能になる"
+            },
+            {
+                "command": "pickup",
+                "reasoning": "椅子がChairAreaに配置され手から離れる"
+            }
+        ]
     },
     
     "pc_plate_move": {
@@ -64,14 +85,30 @@ TASK_EXAMPLES = {
             "navigate: DaiArea（X=0.02, Z=3.55）に移動する",
             "pickup: PCプレートを置く"
         ],
-        "example_response": {
-            "command": "navigate",
-            "x": 4.4,
-            "y": 0.0,
-            "z": 8.5,
-            "reasoning": "PCプレート（座標X=4.3, Z=8.4）に向かって移動"
-        },
-        "completion_criteria": "PCプレートがDaiAreaに配置され、手から離れる"
+        "example_command_sequence": [
+            {
+                "command": "navigate",
+                "x": 4.4,
+                "y": 0.0,
+                "z": 8.5,
+                "reasoning": "PCプレートに隣接してpickupコマンドが使用可能になる"
+            },
+            {
+                "command": "pickup",
+                "reasoning": "PCプレートを持っている状態になる"
+            },
+            {
+                "command": "navigate",
+                "x": 0.1,
+                "y": 0.0,
+                "z": 3.6,
+                "reasoning": "DaiArea付近に到達してpickupコマンドが使用可能になる"
+            },
+            {
+                "command": "pickup",
+                "reasoning": "PCプレートがDaiAreaに配置され手から離れる"
+            }
+        ]
     },
     
     "put_pc_on_plate": {
@@ -82,14 +119,30 @@ TASK_EXAMPLES = {
             "navigate: DaiAreaのPCプレート上に移動する",
             "pickup: PCを置く"
         ],
-        "example_response": {
-            "command": "navigate",
-            "x": 3.1,
-            "y": 0.0,
-            "z": 1.6,
-            "reasoning": "PC（座標X=3.0, Z=1.5）に向かって移動"
-        },
-        "completion_criteria": "PCがプレートの上に配置され、手から離れる"
+        "example_command_sequence": [
+            {
+                "command": "navigate",
+                "x": 3.1,
+                "y": 0.0,
+                "z": 1.6,
+                "reasoning": "PCに隣接してpickupコマンドが使用可能になる"
+            },
+            {
+                "command": "pickup",
+                "reasoning": "PCを持っている状態になる"
+            },
+            {
+                "command": "navigate",
+                "x": 0.1,
+                "y": 0.0,
+                "z": 3.6,
+                "reasoning": "PCプレートの上に到達してpickupコマンドが使用可能になる"
+            },
+            {
+                "command": "pickup",
+                "reasoning": "PCがプレートの上に配置され手から離れる"
+            }
+        ]
     }
 }
 
