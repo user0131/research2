@@ -632,10 +632,21 @@ public class AccessibilityNarrator : MonoBehaviour
     #region 6.1 ドロップ関連
     private string GetDropLocationInfo()
     {
-        if (playerCamera == null) return "pickup（目の前に置く）";
+        if (playerCamera == null) return "pickup（胸元の真下に置く）";
         
-        // プレイヤーの前方1.5メートルの位置を基準とする
-        Vector3 dropPosition = transform.position + transform.forward * 1.5f;
+        // 現在持っているアイテムの位置（胸元）を基準とする
+        Vector3 dropPosition;
+        if (interactionController != null && interactionController.CarriedItem != null)
+        {
+            // 持っているアイテムの真下に置く
+            Vector3 carryPosition = interactionController.CarriedItem.transform.position;
+            dropPosition = new Vector3(carryPosition.x, transform.position.y, carryPosition.z);
+        }
+        else
+        {
+            // アイテムを持っていない場合はプレイヤー位置
+            dropPosition = transform.position;
+        }
         
         // 下方向にレイを飛ばして、置ける表面を探す
         RaycastHit hit;
@@ -1156,7 +1167,10 @@ public class AccessibilityNarrator : MonoBehaviour
         // ドロップ位置の予測を表示
         if (interactionController != null && interactionController.CarriedItem != null)
         {
-            Vector3 dropPosition = transform.position + transform.forward * 1.5f;
+            // 胸元位置の真下に予測ドロップ位置を表示
+            Vector3 carryPosition = interactionController.CarriedItem.transform.position;
+            Vector3 dropPosition = new Vector3(carryPosition.x, transform.position.y, carryPosition.z);
+            
             Gizmos.color = Color.green;
             Gizmos.DrawWireCube(dropPosition, Vector3.one * 0.2f);
             

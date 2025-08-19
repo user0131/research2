@@ -74,9 +74,12 @@ public class PlayerInteractionController : MonoBehaviour
         if (_carriedItem != null)
         {
             string itemName = _carriedItem.itemName;
-            Vector3 dropPosition = _carriedItem.transform.position;
             
+            // Drop実行（内部で適切な位置に配置される）
             _carriedItem.Drop();
+            
+            // Drop後の実際の位置を取得
+            Vector3 dropPosition = _carriedItem.transform.position;
             
             // イベント通知
             NotifyItemDropped(itemName, dropPosition);
