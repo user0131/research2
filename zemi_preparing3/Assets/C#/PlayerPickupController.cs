@@ -32,11 +32,7 @@ public class PlayerPickupController : MonoBehaviour
     
     void Update()
     {
-        // コマンド実行中は検出処理を停止
-        if (AccessibilityNarrator.Instance != null && AccessibilityNarrator.Instance.IsCommandExecuting())
-        {
-            return;
-        }
+        // コマンド実行中は検出処理を停止（不要なチェックを削除）
         
         // 近くのアイテムを検出
         CheckForNearbyItems();

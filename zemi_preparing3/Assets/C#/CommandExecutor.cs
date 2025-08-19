@@ -1,12 +1,7 @@
-// コマンド実行クラス
-// - 移動（north/south/east/west）、pickup、interact、navigate:x,y,z コマンドを実行
-// - StarterAssetsInputsを通じてプレイヤーを操作
+// CommandExecutor - AI専用コマンド実行エンジン
+// AIプレイヤーの「仮想的な手」として、人間の入力をシミュレート
+// 構成: 1=Core, 2=Public API, 3=メイン実行, 4=人間入力シミュレート, 5=AI専用機能
 
-// - PlayerPickupControllerを通じてアイテムを拾う
-// - NavMeshAgentControllerを通じて目的地に移動
-
-// - コマンド実行中かどうかを確認
-// - コマンド実行中の場合は、コマンドを実行しない
 using UnityEngine;
 using StarterAssets;
 using System.Collections;
@@ -14,9 +9,9 @@ using System.Collections;
 public class CommandExecutor : MonoBehaviour
 {
     [Header("Dependencies")]
-    public StarterAssetsInputs inputSystem;
-    public PlayerPickupController pickupController;
-    public NavMeshAgentController navMeshController;
+    public StarterAssetsInputs inputSystem; // 人間と同じ入力システム
+    public PlayerPickupController pickupController; // アイテム操作（参照のみ）
+    public NavMeshAgentController navMeshController; // AI専用の座標移動
     
     [Header("Movement Settings")]
     public float movementDistance = 0.5f; // 移動コマンドの移動距離（単位）
@@ -26,35 +21,38 @@ public class CommandExecutor : MonoBehaviour
     public bool enableDebugLogs = true;
     
     private bool isExecutingCommand = false;
-    
+
+    #region 1. Core lifecycle
     void Start()
     {
         // 依存関係を自動取得
         if (inputSystem == null)
-        {
             inputSystem = GetComponent<StarterAssetsInputs>();
-        }
         
         if (pickupController == null)
-        {
             pickupController = GetComponent<PlayerPickupController>();
-        }
         
         if (navMeshController == null)
-        {
             navMeshController = GetComponent<NavMeshAgentController>();
-        }
         
+        // 必須コンポーネントのチェック
         if (inputSystem == null || pickupController == null)
         {
             Debug.LogError("[CommandExecutor] Required components not found!");
         }
     }
-    
+
+    void OnDestroy()
+    {
+        StopAllCoroutines();
+    }
+    #endregion
+
+    #region 2. Public API(LLMCommunicatorからコマンドを受け取って実行)
     /// <summary>
-    /// コマンドを実行
+    /// LLMCommunicatorからコマンドを受け取って実行
     /// </summary>
-    public void ExecuteCommand(string command, string reasoning = "")
+    public void ExecuteCommand(string command)
     {
         if (isExecutingCommand)
         {
@@ -65,28 +63,55 @@ public class CommandExecutor : MonoBehaviour
             return;
         }
         
-        StartCoroutine(ExecuteCommandCoroutine(command, reasoning));
+        StartCoroutine(ExecuteCommandCoroutine(command));
     }
-    
-    private IEnumerator ExecuteCommandCoroutine(string command, string reasoning)
+
+    /// <summary>
+    /// 現在コマンドを実行中かどうか
+    /// </summary>
+    public bool IsExecutingCommand()
+    {
+        return isExecutingCommand;
+    }
+
+    /// <summary>
+    /// 現在実行中のコマンドを緊急停止
+    /// </summary>
+    public void StopCurrentCommand()
+    {
+        StopAllCoroutines();
+        
+        // 全ての入力をリセット
+        if (inputSystem != null)
+        {
+            inputSystem.MoveInput(Vector2.zero);
+            inputSystem.PickupInput(false);
+            inputSystem.InteractInput(false);
+        }
+        
+        isExecutingCommand = false;
+        
+        if (enableDebugLogs)
+        {
+            Debug.Log("[CommandExecutor] All commands stopped");
+        }
+    }
+    #endregion
+
+    #region 3. メインコマンド実行エンジン(抽象的なコマンドを具体化し、適切なファイル(メソッド)に渡す)
+    private IEnumerator ExecuteCommandCoroutine(string command)
     {
         isExecutingCommand = true;
         
-        // コマンド開始をAccessibilityNarratorに通知（ログ出力停止）
-        if (AccessibilityNarrator.Instance != null)
-        {
-            AccessibilityNarrator.Instance.OnCommandStarted();
-        }
-        
-        // 簡潔なログのみ出力
         if (enableDebugLogs)
         {
             Debug.Log($"[CommandExecutor] Executing: {command}");
         }
         
-        // コマンド実行
+        // コマンド振り分け
         switch (command.ToLower())
         {
+            // 移動系（人間と同じ）
             case "north":
                 yield return ExecuteMovement(Vector2.up);
                 break;
@@ -99,17 +124,22 @@ public class CommandExecutor : MonoBehaviour
             case "west":
                 yield return ExecuteMovement(Vector2.left);
                 break;
+            
+            // アクション系（人間と同じ）
             case "pickup":
                 yield return ExecutePickup();
                 break;
             case "interact":
                 yield return ExecuteInteract();
                 break;
+            
+            // 特殊系
             case "wait":
                 yield return ExecuteWait();
                 break;
+            
+            // AI専用
             default:
-                // navigate:x,y,z形式のコマンドをチェック
                 if (command.StartsWith("navigate:"))
                 {
                     yield return ExecuteNavigateToPosition(command.Substring(9));
@@ -123,123 +153,92 @@ public class CommandExecutor : MonoBehaviour
         
         isExecutingCommand = false;
         
-        // コマンド実行完了をAccessibilityNarratorに通知
+        // コマンド完了通知→ログ収集トリガー
         if (AccessibilityNarrator.Instance != null)
         {
             AccessibilityNarrator.Instance.OnCommandCompleted();
         }
     }
-    
+    #endregion
+
+    #region 4. 人間入力シミュレート（StarterAssetsInputs経由）
+    /// <summary>
+    /// 移動コマンド実行（WASDキーのシミュレート）
+    /// </summary>
     private IEnumerator ExecuteMovement(Vector2 direction)
     {
         if (inputSystem == null)
         {
             if (enableDebugLogs)
-            {
                 Debug.LogError("[CommandExecutor] InputSystem not found!");
-            }
             yield break;
         }
         
-        // 移動開始の詳細ログを削除
-        // 移動開始位置を記録
-        Vector3 startPosition = transform.position;
+        float movementTime = 0.5f; // 移動時間（TODO: 調整可能にする）
         
-        // 移動時間を調整してゆとりのある移動距離にする######### TODO
-        // 実際の移動速度を測定して調整
-        float movementTime = 0.5f; // より長い移動距離のための時間（調整値）
-        
-        // 移動入力を設定
-        inputSystem.MoveInput(direction);
-        
-        // 指定時間だけ移動
-        yield return new WaitForSeconds(movementTime);
-        
-        // 移動を停止
-        inputSystem.MoveInput(Vector2.zero);
-        
-        // 移動完了の詳細ログも削除（必要時のみ有効化）
-        // if (enableDebugLogs)
-        // {
-        //     float actualDistance = Vector3.Distance(startPosition, transform.position);
-        //     Debug.Log($"[CommandExecutor] Movement completed. Actual distance: {actualDistance:F2}");
-        // }
+        inputSystem.MoveInput(direction);              // キー押下開始
+        yield return new WaitForSeconds(movementTime); // 押し続ける
+        inputSystem.MoveInput(Vector2.zero);           // キー解放
     }
-    
+
+    /// <summary>
+    /// ピックアップ実行（Fキーのシミュレート）
+    /// </summary>
     private IEnumerator ExecutePickup()
     {
         if (inputSystem == null)
         {
             if (enableDebugLogs)
-            {
                 Debug.LogError("[CommandExecutor] InputSystem not found!");
-            }
             yield break;
         }
         
-        // ピックアップ詳細ログを削除
-        
-        // ピックアップ入力を設定
-        inputSystem.PickupInput(true);
-        
-        // 短時間待機
+        inputSystem.PickupInput(true);                     // Fキー押下
         yield return new WaitForSeconds(actionPressDuration);
-        
-        // ピックアップ入力を解除
-        inputSystem.PickupInput(false);
-        
-        // 完了ログも削除
+        inputSystem.PickupInput(false);                    // Fキー解放
     }
-    
+
+    /// <summary>
+    /// インタラクト実行（Eキーのシミュレート）
+    /// </summary>
     private IEnumerator ExecuteInteract()
     {
         if (inputSystem == null)
         {
             if (enableDebugLogs)
-            {
                 Debug.LogError("[CommandExecutor] InputSystem not found!");
-            }
             yield break;
         }
         
-        // インタラクト詳細ログを削除
-        
-        // インタラクト入力を設定
-        inputSystem.InteractInput(true);
-        
-        // 短時間待機
+        inputSystem.InteractInput(true);                   // Eキー押下
         yield return new WaitForSeconds(actionPressDuration);
-        
-        // インタラクト入力を解除
-        inputSystem.InteractInput(false);
-        
-        // 完了ログも削除
+        inputSystem.InteractInput(false);                  // Eキー解放
     }
-    
+
+    /// <summary>
+    /// 待機コマンド
+    /// </summary>
     private IEnumerator ExecuteWait()
     {
-        // 少し待機
         yield return new WaitForSeconds(0.5f);
         
-        // 待機完了後、強制的に現在の状況を報告
-        AccessibilityNarrator narrator = AccessibilityNarrator.Instance;
-        if (narrator != null)
+        if (enableDebugLogs)
         {
-            // 現在の状況を再度ナレーション
-            narrator.NarrateCurrentSituation();
+            Debug.Log("[CommandExecutor] 待機完了");
         }
-        
-        Debug.Log("[CommandExecutor] 待機完了");
     }
-    
+    #endregion
+
+    #region 5. AI専用機能（NavMeshAgent）
+    /// <summary>
+    /// 座標指定移動（NavMeshAgent使用）
+    /// </summary>
     private IEnumerator ExecuteNavigateToPosition(string positionString)
     {
         if (navMeshController == null)
         {
             if (enableDebugLogs)
-            {
                 Debug.LogError("[CommandExecutor] NavMeshAgentController not found!");
-            }
             yield break;
         }
         
@@ -248,9 +247,7 @@ public class CommandExecutor : MonoBehaviour
         if (coords.Length != 3)
         {
             if (enableDebugLogs)
-            {
                 Debug.LogError($"[CommandExecutor] Invalid position format: {positionString}");
-            }
             yield break;
         }
         
@@ -263,9 +260,10 @@ public class CommandExecutor : MonoBehaviour
                 Debug.Log($"[CommandExecutor] Navigating to position: ({x}, {y}, {z})");
             }
             
+            // AI専用：座標への自動移動
             navMeshController.NavigateToPosition(x, y, z);
             
-            // ナビゲーションが完了するまで待機
+            // ナビゲーション完了まで待機
             while (navMeshController.IsNavigating())
             {
                 yield return new WaitForSeconds(0.1f);
@@ -284,39 +282,5 @@ public class CommandExecutor : MonoBehaviour
             }
         }
     }
-    
-    /// <summary>
-    /// 現在コマンドを実行中かどうか
-    /// </summary>
-    public bool IsExecutingCommand()
-    {
-        return isExecutingCommand;
-    }
-    
-    /// <summary>
-    /// 現在実行中のコマンドを停止
-    /// </summary>
-    public void StopCurrentCommand()
-    {
-        StopAllCoroutines();
-        
-        if (inputSystem != null)
-        {
-            inputSystem.MoveInput(Vector2.zero);
-            inputSystem.PickupInput(false);
-            inputSystem.InteractInput(false);
-        }
-        
-        isExecutingCommand = false;
-        
-        if (enableDebugLogs)
-        {
-            Debug.Log("[CommandExecutor] All commands stopped");
-        }
-    }
-    
-    private void OnDestroy()
-    {
-        StopAllCoroutines();
-    }
-} 
+    #endregion
+}
