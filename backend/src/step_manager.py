@@ -88,6 +88,11 @@ class StepManager:
     def complete_step(self, step_id: str) -> bool:
         for step in self.steps:
             if step["id"] == step_id:
+                # 既に完了済みのステップは処理しない
+                if step["status"] == StepStatus.COMPLETED.value:
+                    logger.warning(f"Step {step_id} is already completed")
+                    return False
+                    
                 step["status"] = StepStatus.COMPLETED.value
                 step["completed_at"] = datetime.now().isoformat()
                 

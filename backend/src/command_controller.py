@@ -376,7 +376,9 @@ class CommandController:
             # ステップを完了状態に変更
             success = step_manager.complete_step(step_id)
             if not success:
-                logger.warning(f"Failed to complete step: {step_id}")
+                logger.warning(f"Failed to complete step: {step_id} - may be already completed")
+                # 既に完了済みの場合は、次のステップを取得する
+                return self._handle_get_next_step()
             
             logger.info(f"Step completed: {step_id}, getting next step automatically")
             

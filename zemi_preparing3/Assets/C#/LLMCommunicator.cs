@@ -93,7 +93,7 @@ public class LLMCommunicator : MonoBehaviour
     private IEnumerator SendInitialLogs()
     {
         // 少し待機してからログを収集（他のコンポーネントの初期化を待つ）
-        yield return new WaitForSeconds(1.0f);
+        yield return new WaitForSeconds(1.5f);
         
         if (enableDebugLogs)
         {
@@ -116,7 +116,24 @@ public class LLMCommunicator : MonoBehaviour
     {
         if (enableDebugLogs)
         {
-            Debug.Log("[LLMCommunicator] コマンド実行完了 - ログ収集開始");
+            Debug.Log("[LLMCommunicator] コマンド実行完了 - 0.5秒後にログ収集開始");
+        }
+        
+        // 0.5秒待機してからログを送信（バックエンドの負荷軽減）
+        StartCoroutine(DelayedLogCollection());
+    }
+    
+    /// <summary>
+    /// 遅延後にログ収集を実行
+    /// </summary>
+    private IEnumerator DelayedLogCollection()
+    {
+        // 0.5秒待機
+        yield return new WaitForSeconds(0.5f);
+        
+        if (enableDebugLogs)
+        {
+            Debug.Log("[LLMCommunicator] 待機完了 - ログ収集開始");
         }
         
         // AccessibilityNarratorにログ収集を依頼
