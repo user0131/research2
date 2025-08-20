@@ -129,6 +129,23 @@ GET /api/health
 4. Unity側で返されたコマンドを実行
 5. 実行結果を再度 `/api/process` に送信（完了通知）
 
+## テスト
+
+### モックベーステスト
+```bash
+docker-compose exec unity-llm-backend python test/LLM_output_test.py
+```
+
+### OpenAI実出力テスト
+```bash
+docker-compose exec unity-llm-backend python test/OpenAI_real_test.py
+```
+
+### 統合フローテスト
+```bash
+docker-compose exec unity-llm-backend python test/integration_flow_test.py
+```
+
 ## 注意事項
 
 - OpenAI API キーが必要です
