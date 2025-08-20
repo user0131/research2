@@ -1,13 +1,14 @@
 """
-LLMマネージャー - 2つのLLMシステム統合
+LLMマネージャー - 3つのLLMシステム統合
 1. Task & Step Planner LLM: タスクをステップに分解
 2. Step Completion Checker LLM: ステップ完了判定と次ステップ進行判断
+3. Task Reconstructor LLM: エラー時のタスク再構成
 """
 
 import json
 import logging
 from typing import Dict, List
-from task_definitions import get_tasks, get_dependencies, get_task_examples, get_available_commands
+from constants import get_tasks, get_dependencies, get_task_examples, get_available_commands, get_prompt_template, PROMPT_TEMPLATES
 
 logger = logging.getLogger(__name__)
 
@@ -42,30 +43,9 @@ class TaskStepPlannerLLM:
             2. **最適なタスク選択**: DAG依存関係に基づく実行可能タスクの選択
             3. **ステップ分解**: 選択したタスクを具体的なコマンドシーケンスに分解
 
-            ## 利用可能なコマンド
-            - "navigate": 指定座標への移動 (parameters: x, z のみ。Y座標は指定不要)
-            - "pickup": アイテムの拾い上げ/設置
-            - "interact": オブジェクトとの相互作用
-            - "wait": 待機
+{get_prompt_template("available_commands")}
 
-            ## ステップ出力形式
-            タスク定義の例に従って、以下の形式でステップを出力してください：
-            [
-                {
-                    "command": "navigate",
-                    "x": 数値,
-                    "z": 数値,
-                    "reasoning": "このステップで達成すべき具体的な目標"
-                },
-                {
-                    "command": "pickup",
-                    "reasoning": "pickup実行で達成すべき具体的な目標"
-                },
-                {
-                    "command": "interact",
-                    "reasoning": "interact実行で達成すべき具体的な目標"
-                }
-            ]
+{get_prompt_template("step_format_example")}
 
             ## 出力要件
             - ステップシーケンスの配列のみを出力
@@ -91,9 +71,6 @@ class TaskStepPlannerLLM:
             ## タスク実行例（ステップ形式の参考）
             {json.dumps(task_examples, ensure_ascii=False, indent=2)}
 
-            ## 利用可能なコマンド詳細
-            {json.dumps(self.available_commands, ensure_ascii=False, indent=2)}
-
             現在の状況から最も適切なタスクを選択し、タスク実行例の形式に従ってステップシーケンスを作成してください。
             各ステップにはreasoningを必ず含めて、そのステップで何を達成するかを明確にしてください。
 
@@ -106,7 +83,7 @@ class TaskStepPlannerLLM:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=1500,
+                max_tokens=1000,
                 temperature=0.1
             )
             
@@ -121,7 +98,9 @@ class TaskStepPlannerLLM:
             
         except Exception as e:
             logger.error(f"Error in plan_task_steps: {str(e)}")
-            return [{"command": "wait", "reasoning": f"エラーが発生: {str(e)}"}]
+            error_step = PROMPT_TEMPLATES["error_fallback_step"].copy()
+            error_step["reasoning"] = f"計画エラー: {str(e)}"
+            return [error_step]
     
     def _validate_steps(self, steps: List[Dict]) -> List[Dict]:
         """ステップの妥当性をチェック"""
@@ -193,23 +172,9 @@ class StepCompletionCheckerLLM:
             ## 役割
             ステップのreasoningが達成されたかを判定し、次のステップに進むか、ステップの再構築が必要かを判断する
 
-            ## 判断基準
-            ### ステップの成功判定:
-            - **reasoning達成**: ステップのreasoningで設定した目標が達成されたか
-            - 例: reasoning「テレビに隣接してinteractコマンドが使用可能になる」
-              → Unity側でinteractコマンドが利用可能になったら成功
-            - 例: reasoning「椅子を持っている状態になる」
-              → プレイヤーが椅子を持った状態になったら成功
+{get_prompt_template("completion_check_criteria")}
 
-            ### 判断結果:
-            - **proceed**: reasoningが達成され、次のステップに進める
-            - **rebuild**: reasoningが達成されておらず、ステップの再構築が必要
-
-            ## 出力形式
-            {
-                "action": "proceed" または "rebuild",
-                "reasoning": "判断の理由の詳細説明"
-            }
+{get_prompt_template("json_output_format")}
             """
             
             user_prompt = f"""
@@ -247,7 +212,7 @@ class StepCompletionCheckerLLM:
             logger.error(f"Error in check_step_completion: {str(e)}")
             return {
                 "action": "rebuild",
-                "reasoning": f"エラーが発生: {str(e)}"
+                "reasoning": f"完了判定エラー: {str(e)}"
             }
     
     def _extract_json_from_response(self, response_text: str) -> Dict:
@@ -266,7 +231,7 @@ class StepCompletionCheckerLLM:
             logger.warning(f"Failed to extract JSON from response: {response_text}")
             return {
                 "action": "rebuild",
-                "reasoning": "JSON解析失敗"
+                "reasoning": "完了判定のJSON解析失敗"
             }
 
 
@@ -295,11 +260,7 @@ class TaskReconstructorLLM:
             3. **タスク再構成**: 新しいアプローチでタスクを再設計
             4. **ステップ修正**: 問題を回避する新しいステップシーケンスを作成
 
-            ## 分析対象
-            - エラーメッセージとその詳細
-            - 失敗したステップの内容
-            - 環境の変化や制約
-            - 代替アプローチの可能性
+{get_prompt_template("available_commands")}
 
             ## 再構成戦略
             ### エラー回避:
@@ -312,27 +273,7 @@ class TaskReconstructorLLM:
             - 手順の変更
             - 一時的な回避策
 
-            ## 出力形式
-            {
-                "analysis": {
-                    "error_type": "エラーの種類",
-                    "root_cause": "根本原因",
-                    "impact_assessment": "影響度評価"
-                },
-                "reconstruction": {
-                    "strategy": "再構成戦略",
-                    "changes_made": ["行った変更点"],
-                    "risk_mitigation": "リスク軽減策"
-                },
-                "new_steps": [
-                    {
-                        "command": "コマンド名",
-                        "x": 数値 (navigateの場合),
-                        "z": 数値 (navigateの場合),
-                        "reasoning": "このステップで達成すべき具体的な目標"
-                    }
-                ]
-            }
+{get_prompt_template("reconstruction_output_format")}
             """
             
             user_prompt = f"""
@@ -354,7 +295,7 @@ class TaskReconstructorLLM:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=1500,
+                max_tokens=1000,
                 temperature=0.1
             )
             
@@ -366,10 +307,10 @@ class TaskReconstructorLLM:
             
         except Exception as e:
             logger.error(f"Error in reconstruct_task: {str(e)}")
+            error_step = PROMPT_TEMPLATES["error_fallback_step"].copy()
+            error_step["reasoning"] = f"再構成エラー: {str(e)}"
             return {
-                "analysis": {"error": str(e)},
-                "reconstruction": {"strategy": "エラー回復失敗"},
-                "new_steps": [{"command": "wait", "reasoning": f"再構成エラー: {str(e)}"}]
+                "new_steps": [error_step]
             }
     
     def _extract_json_from_response(self, response_text: str) -> Dict:
@@ -386,10 +327,10 @@ class TaskReconstructorLLM:
                     pass
             
             logger.warning(f"Failed to extract JSON from response: {response_text}")
+            error_step = PROMPT_TEMPLATES["error_fallback_step"].copy()
+            error_step["reasoning"] = "JSON解析失敗"
             return {
-                "analysis": {"error": "JSON解析失敗"},
-                "reconstruction": {"strategy": "解析失敗"},
-                "new_steps": [{"command": "wait", "reasoning": "JSON解析失敗"}]
+                "new_steps": [error_step]
             }
 
 

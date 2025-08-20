@@ -44,6 +44,68 @@ AVAILABLE_COMMANDS = {
     }
 }
 
+# 共通のプロンプトテンプレート
+PROMPT_TEMPLATES = {
+    "available_commands": """
+## 利用可能なコマンド
+- "navigate": 指定座標への移動 (parameters: x, z のみ。Y座標は指定不要)
+- "pickup": アイテムの拾い上げ/設置
+- "interact": オブジェクトとの相互作用
+- "wait": 待機""",
+    
+    "step_format_example": """
+## ステップ出力形式
+[
+    {
+        "command": "navigate",
+        "x": 数値,
+        "z": 数値,
+        "reasoning": "このステップで達成すべき具体的な目標"
+    },
+    {
+        "command": "pickup",
+        "reasoning": "pickup実行で達成すべき具体的な目標"
+    },
+    {
+        "command": "interact",
+        "reasoning": "interact実行で達成すべき具体的な目標"
+    }
+]""",
+    
+    "completion_check_criteria": """
+## 判断基準
+ステップのreasoningフィールドに記載された達成条件がログから確認できるかを判定してください。
+
+### 判断結果:
+- **proceed**: reasoningが達成された
+- **rebuild**: reasoningが達成されていない""",
+    
+    "json_output_format": """
+## 出力形式
+{
+    "action": "proceed" または "rebuild",
+    "reasoning": "判断の理由の詳細説明"
+}""",
+    
+    "reconstruction_output_format": """
+## 出力形式
+{
+    "new_steps": [
+        {
+            "command": "コマンド名",
+            "x": 数値 (navigateの場合),
+            "z": 数値 (navigateの場合),
+            "reasoning": "このステップで達成すべき具体的な目標"
+        }
+    ]
+}""",
+    
+    "error_fallback_step": {
+        "command": "wait",
+        "reasoning": "システムエラーのため待機"
+    }
+}
+
 # タスク実行例（Few-shot prompting用）
 TASK_EXAMPLES = {
     "tv_switch": {
@@ -205,3 +267,11 @@ def get_available_commands():
 def get_command_info(command_name):
     """特定のコマンドの情報を取得"""
     return AVAILABLE_COMMANDS.get(command_name, {"description": "未知のコマンド", "parameters": [], "usage": "使用方法不明"})
+
+def get_prompt_templates():
+    """プロンプトテンプレートを取得"""
+    return PROMPT_TEMPLATES
+
+def get_prompt_template(template_name):
+    """特定のプロンプトテンプレートを取得"""
+    return PROMPT_TEMPLATES.get(template_name, "")
