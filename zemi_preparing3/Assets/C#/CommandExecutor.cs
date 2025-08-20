@@ -144,6 +144,19 @@ public class CommandExecutor : MonoBehaviour
                 {
                     yield return ExecuteNavigateToPosition(command.Substring(9));
                 }
+                else if (command.StartsWith("navigate(") && command.EndsWith(")"))
+                {
+                    // navigate(x,z) 形式の処理
+                    yield return ExecuteNavigateFromFunction(command);
+                }
+                else if (command.ToLower() == "navigate")
+                {
+                    // navigate単体の場合は警告を表示（座標が必要）
+                    if (enableDebugLogs)
+                    {
+                        Debug.LogWarning($"[CommandExecutor] Navigate command requires coordinates (format: navigate(x,z))");
+                    }
+                }
                 else if (enableDebugLogs)
                 {
                     Debug.LogWarning($"[CommandExecutor] Unknown command: {command}");
@@ -279,6 +292,62 @@ public class CommandExecutor : MonoBehaviour
             if (enableDebugLogs)
             {
                 Debug.LogError($"[CommandExecutor] Failed to parse position: {positionString}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// navigate(x,z) 形式の座標指定移動
+    /// </summary>
+    private IEnumerator ExecuteNavigateFromFunction(string command)
+    {
+        if (navMeshController == null)
+        {
+            if (enableDebugLogs)
+                Debug.LogError("[CommandExecutor] NavMeshAgentController not found!");
+            yield break;
+        }
+
+        // navigate(x,z) から座標を抽出
+        string coordsPart = command.Substring(9, command.Length - 10); // "navigate(" と ")" を除去
+        string[] coords = coordsPart.Split(',');
+        
+        if (coords.Length != 2)
+        {
+            if (enableDebugLogs)
+                Debug.LogError($"[CommandExecutor] Invalid navigate format: {command}. Expected: navigate(x,z)");
+            yield break;
+        }
+
+        if (float.TryParse(coords[0].Trim(), out float x) &&
+            float.TryParse(coords[1].Trim(), out float z))
+        {
+            float y = 0f; // Y座標は0固定
+
+            if (enableDebugLogs)
+            {
+                Debug.Log($"[CommandExecutor] Navigating to position: ({x}, {y}, {z})");
+            }
+
+            // AI専用：座標への自動移動
+            navMeshController.NavigateToPosition(x, y, z);
+
+            // ナビゲーション完了まで待機
+            while (navMeshController.IsNavigating())
+            {
+                yield return new WaitForSeconds(0.1f);
+            }
+
+            if (enableDebugLogs)
+            {
+                Debug.Log("[CommandExecutor] Navigation completed");
+            }
+        }
+        else
+        {
+            if (enableDebugLogs)
+            {
+                Debug.LogError($"[CommandExecutor] Failed to parse coordinates: {coordsPart}");
             }
         }
     }

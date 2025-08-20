@@ -119,13 +119,19 @@ class CommandController:
         return unity_response
     
     def _populate_step_response(self, unity_response: Dict, step: Dict):
-        unity_response["command"] = step.get("command", "wait")
+        command = step.get("command", "wait")
+        unity_response["command"] = command
         unity_response["reasoning"] = step.get("reasoning", "")
         unity_response["step_id"] = step.get("id", "")
         unity_response["current_task"] = step.get("task_id", "")
         
-        # navigateコマンドの場合、座標を設定
-        if step.get("command") == "navigate":
+        # navigate(x,z)コマンドの場合、そのままUnityに送信
+        # Unity側のCommandExecutorが navigate(x,z) 形式を処理する
+        if command.startswith("navigate(") and command.endswith(")"):
+            # navigate(x,z)形式はそのまま送信（Unity側で解析）
+            pass
+        elif step.get("command") == "navigate":
+            # 旧形式の後方互換性のため
             unity_response["x"] = step.get("x")
             unity_response["y"] = step.get("y", 0)  # Y座標がない場合は0をデフォルト値
             unity_response["z"] = step.get("z")

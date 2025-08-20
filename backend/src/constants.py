@@ -58,7 +58,7 @@ AVAILABLE_COMMANDS = {
 PROMPT_TEMPLATES = {
     "available_commands": """
 ## 利用可能なコマンド
-- "navigate": 指定座標への移動 (parameters: x, z のみ。Y座標は指定不要)
+- "navigate(x,z)": 指定座標への移動 (例: navigate(0.1,5.4))
 - "pickup": アイテムの拾い上げ/設置
 - "interact": オブジェクトとの相互作用
 - "wait": 待機""",
@@ -67,9 +67,7 @@ PROMPT_TEMPLATES = {
 ## ステップ出力形式
 [
     {
-        "command": "navigate",
-        "x": 数値,
-        "z": 数値,
+        "command": "navigate(x,z)",
         "reasoning": "このステップで達成すべき具体的な目標"
     },
     {
@@ -102,9 +100,7 @@ PROMPT_TEMPLATES = {
 {
     "new_steps": [
         {
-            "command": "コマンド名",
-            "x": 数値 (navigateの場合),
-            "z": 数値 (navigateの場合),
+            "command": "navigate(x,z)",
             "reasoning": "このステップで達成すべき具体的な目標"
         }
     ]
@@ -128,10 +124,7 @@ TASK_EXAMPLES = {
         ],
         "example_command_sequence": [
             {
-                "command": "navigate",
-                "x": 0.1,
-                "y": 0.0,
-                "z": 5.4,
+                "command": "navigate(0.1,5.4)",
                 "reasoning": "テレビに隣接してinteractコマンドが使用可能になる"
             },
             {
@@ -151,10 +144,7 @@ TASK_EXAMPLES = {
         ],
         "example_command_sequence": [
             {
-                "command": "navigate",
-                "x": -3.1,
-                "y": 0.0,
-                "z": -0.5,
+                "command": "navigate(-3.1,-0.5)",
                 "reasoning": "椅子に隣接してpickupコマンドが使用可能になる"
             },
             {
@@ -162,10 +152,7 @@ TASK_EXAMPLES = {
                 "reasoning": "椅子を持っている状態になる"
             },
             {
-                "command": "navigate",
-                "x": 5.5,
-                "y": 0.0,
-                "z": -3.6,
+                "command": "navigate(5.5,-3.6)",
                 "reasoning": "ChairArea付近に到達してpickupコマンドが使用可能になる"
             },
             {
@@ -185,10 +172,7 @@ TASK_EXAMPLES = {
         ],
         "example_command_sequence": [
             {
-                "command": "navigate",
-                "x": 4.4,
-                "y": 0.0,
-                "z": 8.5,
+                "command": "navigate(4.4,8.5)",
                 "reasoning": "PCプレートに隣接してpickupコマンドが使用可能になる"
             },
             {
@@ -196,10 +180,7 @@ TASK_EXAMPLES = {
                 "reasoning": "PCプレートを持っている状態になる"
             },
             {
-                "command": "navigate",
-                "x": 0.1,
-                "y": 0.0,
-                "z": 3.6,
+                "command": "navigate(0.1,3.6)",
                 "reasoning": "DaiArea付近に到達してpickupコマンドが使用可能になる"
             },
             {
@@ -219,10 +200,7 @@ TASK_EXAMPLES = {
         ],
         "example_command_sequence": [
             {
-                "command": "navigate",
-                "x": 3.1,
-                "y": 0.0,
-                "z": 1.6,
+                "command": "navigate(3.1,1.6)",
                 "reasoning": "PCに隣接してpickupコマンドが使用可能になる"
             },
             {
@@ -230,10 +208,7 @@ TASK_EXAMPLES = {
                 "reasoning": "PCを持っている状態になる"
             },
             {
-                "command": "navigate",
-                "x": 0.1,
-                "y": 0.0,
-                "z": 3.6,
+                "command": "navigate(0.1,3.6)",
                 "reasoning": "PCプレートの上に到達してpickupコマンドが使用可能になる"
             },
             {

@@ -177,10 +177,15 @@ public class LLMCommunicator : MonoBehaviour
                         
                         // コマンド実行開始（CommandExecutorで状態管理）
                         
-                        // 座標移動コマンドの場合、座標情報を使用（Y座標は省略可能）
-                        if (response.command == "navigate" && response.x.HasValue && response.z.HasValue)
+                        // navigate(x,z)形式またはnavigate + 座標の場合を処理
+                        if (response.command.StartsWith("navigate(") && response.command.EndsWith(")"))
                         {
-                            // Y座標が指定されていない場合は0を使用
+                            // navigate(x,z)形式をそのまま実行
+                            ExecuteCommand(response.command);
+                        }
+                        else if (response.command == "navigate" && response.x.HasValue && response.z.HasValue)
+                        {
+                            // 旧形式の後方互換性（Y座標は省略可能）
                             float yValue = response.y.HasValue ? response.y.Value : 0f;
                             string navigateCommand = $"navigate:{response.x},{yValue},{response.z}";
                             ExecuteCommand(navigateCommand);

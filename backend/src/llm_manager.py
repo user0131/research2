@@ -137,7 +137,8 @@ class TaskStepPlannerLLM:
         
         for step in steps:
             command = step.get("command")
-            if command in valid_commands:
+            # navigate(x,z)形式をチェック
+            if command in valid_commands or (command and command.startswith("navigate(") and command.endswith(")")):
                 validated_steps.append(step)
             else:
                 logger.warning(f"Invalid command in step: {command}")

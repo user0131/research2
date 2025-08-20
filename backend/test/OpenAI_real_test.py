@@ -114,7 +114,10 @@ class OpenAIRealTester:
                 print(f"\n📝 ステップ {i+1}:")
                 print(f"  - command: {step.get('command', 'N/A')}")
                 print(f"  - reasoning: {step.get('reasoning', 'N/A')}")
-                if step.get('command') == 'navigate':
+                # navigate(x,z)形式またはnavigate + x,z形式のチェック
+                if step.get('command', '').startswith('navigate('):
+                    print(f"  - 形式: navigate(x,z)")
+                elif step.get('command') == 'navigate':
                     print(f"  - x: {step.get('x', 'N/A')}")
                     print(f"  - z: {step.get('z', 'N/A')}")
         
@@ -123,16 +126,14 @@ class OpenAIRealTester:
     def test_llm2_completion_check_proceed(self):
         """LLM2: ステップ完了判定（成功パターン）の実出力テスト"""
         step_info = {
-            "command": "navigate",
+            "command": "navigate(0.1,5.4)",
             "reasoning": "テレビに隣接してinteractコマンドが使用可能になる",
-            "x": 0.1,
-            "z": 5.4,
             "step_id": "test_step_1",
             "task_id": "test_task_1"
         }
         
         execution_result = {
-            "executed_command": "navigate",
+            "executed_command": "navigate(0.1,5.4)",
             "result_logs": [
                 "=== 現在の状況 ===",
                 "[現在地]",
@@ -241,7 +242,10 @@ class OpenAIRealTester:
                 print(f"  ステップ {i+1}:")
                 print(f"    - command: {step.get('command', 'N/A')}")
                 print(f"    - reasoning: {step.get('reasoning', 'N/A')}")
-                if step.get('command') == 'navigate':
+                # navigate(x,z)形式またはnavigate + x,z形式のチェック
+                if step.get('command', '').startswith('navigate('):
+                    print(f"    - 形式: navigate(x,z)")
+                elif step.get('command') == 'navigate':
                     print(f"    - x: {step.get('x', 'N/A')}")
                     print(f"    - z: {step.get('z', 'N/A')}")
         

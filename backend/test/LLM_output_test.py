@@ -135,9 +135,7 @@ class LLMOutputTester:
             mock_step_manager.add_steps.return_value = ["step_1", "step_2"]
             mock_step_manager.get_next_step.return_value = {
                 "id": "step_1",
-                "command": "navigate",
-                "x": 0.1,
-                "z": 5.4,
+                "command": "navigate(0.1,5.4)",
                 "reasoning": "テレビに隣接してinteractコマンドが使用可能になる"
             }
             
@@ -161,9 +159,7 @@ class LLMOutputTester:
                 # LLM1のレスポンスをモック
                 mock_llm.plan_task.return_value = [
                     {
-                        "command": "navigate",
-                        "x": 0.1,
-                        "z": 5.4,
+                        "command": "navigate(0.1,5.4)",
                         "reasoning": "テレビに隣接してinteractコマンドが使用可能になる"
                     }
                 ]
@@ -229,9 +225,7 @@ class LLMOutputTester:
             mock_step_manager.complete_step.return_value = True
             mock_step_manager.get_next_step.return_value = {
                 "id": "step_2",
-                "command": "navigate",
-                "x": 5.5,
-                "z": -3.6,
+                "command": "navigate(5.5,-3.6)",
                 "reasoning": "ChairArea付近に到達してpickupコマンドが使用可能になる"
             }
             
@@ -362,9 +356,7 @@ class LLMOutputTester:
                 mock_llm.reconstruct_task.return_value = {
                     "new_steps": [
                         {
-                            "command": "navigate",
-                            "x": -3.1,
-                            "z": -0.5,
+                            "command": "navigate(-3.1,-0.5)",
                             "reasoning": "椅子の正確な位置に移動"
                         }
                     ]
@@ -374,9 +366,7 @@ class LLMOutputTester:
                 mock_step_manager.add_steps.return_value = ["step_recon_1"]
                 mock_step_manager.get_next_step.return_value = {
                     "id": "step_recon_1",
-                    "command": "navigate",
-                    "x": -3.1,
-                    "z": -0.5,
+                    "command": "navigate(-3.1,-0.5)",
                     "reasoning": "椅子の正確な位置に移動"
                 }
                 

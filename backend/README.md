@@ -56,14 +56,14 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "command": "navigate",
-  "x": 0.1,
-  "z": 5.4,
+  "command": "navigate(0.1,5.4)",
   "reasoning": "テレビに隣接してinteractコマンドが使用可能になる",
   "current_task": "task_20250120_143052",
   "step_id": "uuid-generated-step-id"
 }
 ```
+
+注: navigateコマンドは`navigate(x,z)`形式で返されます。x,y,zフィールドは後方互換性のため残されていますが、nullになります。
 
 ### ヘルスチェック
 ```
@@ -101,7 +101,7 @@ GET /api/health
 
 ## 利用可能なコマンド
 
-- **`navigate`**: 絶対座標への移動 (parameters: x, z)
+- **`navigate(x,z)`**: 絶対座標への移動 (例: navigate(0.1,5.4))
 - **`pickup`**: アイテムの拾い上げ/設置
 - **`interact`**: オブジェクトとの相互作用 (TV電源など)
 - **`wait`**: 待機
