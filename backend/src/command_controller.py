@@ -63,7 +63,12 @@ class CommandController:
                 }
             
             # Unity形式に変換して返す
-            return self._convert_to_unity_format(result)
+            unity_response = self._convert_to_unity_format(result)
+            
+            # ログの記録保存
+            storage_manager.process_and_save_logs(data, unity_response, result)
+            
+            return unity_response
             
         except Exception as e:
             logger.error(f"Error in process_step: {str(e)}")
@@ -576,6 +581,7 @@ class CommandController:
                 "success": False,
                 "error": f"エラーが発生しました: {str(e)}"
             }
+    
 
 # グローバルコントローラーインスタンス
 command_controller = CommandController()
