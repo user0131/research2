@@ -43,7 +43,7 @@ class TaskStepPlannerLLM:
             3. **ステップ分解**: 選択したタスクを具体的なコマンドシーケンスに分解
 
             ## 利用可能なコマンド
-            - "navigate": 指定座標への移動 (parameters: x, y, z)
+            - "navigate": 指定座標への移動 (parameters: x, z のみ。Y座標は指定不要)
             - "pickup": アイテムの拾い上げ/設置
             - "interact": オブジェクトとの相互作用
             - "wait": 待機
@@ -54,7 +54,6 @@ class TaskStepPlannerLLM:
                 {
                     "command": "navigate",
                     "x": 数値,
-                    "y": 数値,
                     "z": 数値,
                     "reasoning": "このステップで達成すべき具体的な目標"
                 },
@@ -329,7 +328,6 @@ class TaskReconstructorLLM:
                     {
                         "command": "コマンド名",
                         "x": 数値 (navigateの場合),
-                        "y": 数値 (navigateの場合), 
                         "z": 数値 (navigateの場合),
                         "reasoning": "このステップで達成すべき具体的な目標"
                     }

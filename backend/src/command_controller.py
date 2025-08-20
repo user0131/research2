@@ -105,10 +105,10 @@ class CommandController:
             unity_response["step_id"] = step.get("id", "")
             unity_response["current_task"] = step.get("task_id", "")
             
-            # navigateコマンドの場合、座標を設定
+            # navigateコマンドの場合、座標を設定（Y座標は省略可能）
             if step.get("command") == "navigate":
                 unity_response["x"] = step.get("x")
-                unity_response["y"] = step.get("y")
+                unity_response["y"] = step.get("y", 0)  # Y座標がない場合は0をデフォルト値とする
                 unity_response["z"] = step.get("z")
                 
         elif action in ["planned", "reconstructed_from_error", "task_completed_new_planned", "completion_steps_reconstructed"]:
@@ -122,7 +122,7 @@ class CommandController:
                 
                 if next_step.get("command") == "navigate":
                     unity_response["x"] = next_step.get("x")
-                    unity_response["y"] = next_step.get("y")
+                    unity_response["y"] = next_step.get("y", 0)  # Y座標がない場合は0をデフォルト値とする
                     unity_response["z"] = next_step.get("z")
             else:
                 # ステップがない場合はwaitコマンド

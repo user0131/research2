@@ -456,7 +456,8 @@ public class AccessibilityNarrator : MonoBehaviour
                     string xStr = diff.x >= 0 ? $"+{diff.x:F1}" : $"{diff.x:F1}";
                     string zStr = diff.z >= 0 ? $"+{diff.z:F1}" : $"{diff.z:F1}";
                     string displayName = priority == "台" ? "PCプレート" : priority;
-                    importantObjects.Add($"x方向に{xStr}、z方向に{zStr}に{displayName}");
+                    // 絶対座標も追加
+                    importantObjects.Add($"x方向に{xStr}、z方向に{zStr}に{displayName}（座標: x={objectPos.x:F1}, z={objectPos.z:F1}）");
                 }
                 else
                 {
@@ -470,7 +471,8 @@ public class AccessibilityNarrator : MonoBehaviour
                     string zStr = diff.z >= 0 ? $"+{diff.z:F1}" : $"{diff.z:F1}";
                     string displayPriority = priority == "台" ? "PCプレート" : priority;
                     string countText = GetCountText(displayPriority, positions.Count);
-                    importantObjects.Add($"x方向に{xStr}、z方向に{zStr}に{countText}");
+                    // 絶対座標も追加
+                    importantObjects.Add($"x方向に{xStr}、z方向に{zStr}に{countText}（最寄り座標: x={objectPos.x:F1}, z={objectPos.z:F1}）");
                 }
             }
         }
@@ -488,25 +490,8 @@ public class AccessibilityNarrator : MonoBehaviour
     {
         List<string> availableCommands = new List<string>();
         
-        // 各方向をチェック
-        Vector3[] directions = {
-            Vector3.forward,  // +Z
-            Vector3.right,    // +X
-            Vector3.back,     // -Z
-            Vector3.left      // -X
-        };
-        
-        string[] directionNames = { "+Z", "+X", "-Z", "-X" };
-        
-        for (int i = 0; i < directions.Length; i++)
-        {
-            string obstacle = GetObstacleInDirection(directions[i]);
-            if (string.IsNullOrEmpty(obstacle))
-            {
-                availableCommands.Add(directionNames[i]);
-            }
-            // 利用不可のコマンドは表示しない
-        }
+        // navigationコマンドは常に利用可能
+        availableCommands.Add("navigation（任意の座標へ移動）");
         
         return availableCommands;
     }
@@ -610,11 +595,13 @@ public class AccessibilityNarrator : MonoBehaviour
                 float distance = Vector3.Distance(transform.position, tableObj.transform.position);
                 if (distance <= 3.0f) // 3メートル範囲
                 {
-                    Vector3 diff = tableObj.transform.position - transform.position;
+                    Vector3 tablePos = tableObj.transform.position;
+                    Vector3 diff = tablePos - transform.position;
                     string xStr = diff.x >= 0 ? $"+{diff.x:F1}" : $"{diff.x:F1}";
                     string zStr = diff.z >= 0 ? $"+{diff.z:F1}" : $"{diff.z:F1}";
                     string tableDescription = GetTableDescription(tableName);
-                    tablePositions.Add($"x方向に{xStr}、z方向に{zStr}に{tableDescription}");
+                    // 絶対座標も追加
+                    tablePositions.Add($"x方向に{xStr}、z方向に{zStr}に{tableDescription}（座標: x={tablePos.x:F1}, z={tablePos.z:F1}）");
                 }
             }
         }
@@ -1058,7 +1045,8 @@ public class AccessibilityNarrator : MonoBehaviour
             Vector3 chairAreaDiff = chairAreaPos - playerPos;
             string chairXStr = chairAreaDiff.x >= 0 ? $"+{chairAreaDiff.x:F1}" : $"{chairAreaDiff.x:F1}";
             string chairZStr = chairAreaDiff.z >= 0 ? $"+{chairAreaDiff.z:F1}" : $"{chairAreaDiff.z:F1}";
-            importantObjects.Add($"x方向に{chairXStr}、z方向に{chairZStr}にChairArea");
+            // 絶対座標も追加
+            importantObjects.Add($"x方向に{chairXStr}、z方向に{chairZStr}にChairArea（座標: x={chairAreaPos.x:F1}, z={chairAreaPos.z:F1}）");
         }
         
         // DaiArea（X=0.02, Z=3.55）の位置情報
@@ -1071,7 +1059,8 @@ public class AccessibilityNarrator : MonoBehaviour
             Vector3 daiAreaDiff = daiAreaPos - playerPos;
             string daiXStr = daiAreaDiff.x >= 0 ? $"+{daiAreaDiff.x:F1}" : $"{daiAreaDiff.x:F1}";
             string daiZStr = daiAreaDiff.z >= 0 ? $"+{daiAreaDiff.z:F1}" : $"{daiAreaDiff.z:F1}";
-            importantObjects.Add($"x方向に{daiXStr}、z方向に{daiZStr}にDaiArea");
+            // 絶対座標も追加
+            importantObjects.Add($"x方向に{daiXStr}、z方向に{daiZStr}にDaiArea（座標: x={daiAreaPos.x:F1}, z={daiAreaPos.z:F1}）");
         }
     }
 

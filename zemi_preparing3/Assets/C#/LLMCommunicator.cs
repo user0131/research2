@@ -177,10 +177,12 @@ public class LLMCommunicator : MonoBehaviour
                         
                         // コマンド実行開始（CommandExecutorで状態管理）
                         
-                        // 座標移動コマンドの場合、座標情報を使用
-                        if (response.command == "navigate" && response.x.HasValue && response.y.HasValue && response.z.HasValue)
+                        // 座標移動コマンドの場合、座標情報を使用（Y座標は省略可能）
+                        if (response.command == "navigate" && response.x.HasValue && response.z.HasValue)
                         {
-                            string navigateCommand = $"navigate:{response.x},{response.y},{response.z}";
+                            // Y座標が指定されていない場合は0を使用
+                            float yValue = response.y.HasValue ? response.y.Value : 0f;
+                            string navigateCommand = $"navigate:{response.x},{yValue},{response.z}";
                             ExecuteCommand(navigateCommand);
                         }
                         else
@@ -254,23 +256,11 @@ public class LLMCommunicator : MonoBehaviour
             return;
         }
         
-        // 正規表現による方向コマンドの変換
-        string normalizedCommand = NormalizeCommand(command);
-        
-        switch (normalizedCommand.ToLower())
+        // コマンドをそのままCommandExecutorに渡す
+        // navigateコマンドは "navigate:x,y,z" 形式で既に処理済み
+        // その他のコマンドは直接実行
+        switch (command.ToLower())
         {
-            case "north":
-                commandExecutor.ExecuteCommand("north");
-                break;
-            case "south":
-                commandExecutor.ExecuteCommand("south");
-                break;
-            case "east":
-                commandExecutor.ExecuteCommand("east");
-                break;
-            case "west":
-                commandExecutor.ExecuteCommand("west");
-                break;
             case "pickup":
                 commandExecutor.ExecuteCommand("pickup");
                 break;
@@ -278,45 +268,16 @@ public class LLMCommunicator : MonoBehaviour
                 commandExecutor.ExecuteCommand("interact");
                 break;
             case "e":
-            case "E":
                 commandExecutor.ExecuteCommand("interact"); // Eコマンドはinteractとしてマップ
                 break;
             case "wait":
                 commandExecutor.ExecuteCommand("wait");
                 break;
             default:
-                Debug.LogWarning($"[LLMCommunicator] 不明なコマンド: {command} (正規化後: {normalizedCommand})");
+                // navigateコマンドまたはその他のコマンドをそのまま実行
+                commandExecutor.ExecuteCommand(command);
                 break;
         }
-    }
-    
-    private string NormalizeCommand(string command)
-    {
-        // 方向コマンドの正規表現マッピング
-        string normalized = command.Trim();
-        
-        // +Z, +z → north
-        if (System.Text.RegularExpressions.Regex.IsMatch(normalized, @"^\+[Zz]$"))
-        {
-            return "north";
-        }
-        // -Z, -z → south
-        if (System.Text.RegularExpressions.Regex.IsMatch(normalized, @"^-[Zz]$"))
-        {
-            return "south";
-        }
-        // +X, +x → east
-        if (System.Text.RegularExpressions.Regex.IsMatch(normalized, @"^\+[Xx]$"))
-        {
-            return "east";
-        }
-        // -X, -x → west
-        if (System.Text.RegularExpressions.Regex.IsMatch(normalized, @"^-[Xx]$"))
-        {
-            return "west";
-        }
-        
-        return normalized;
     }
     #endregion
 }
