@@ -41,7 +41,12 @@ class TaskStepPlannerLLM:
             - 既に完了したタスクは再度実行しないでください
             - 依存関係を満たしていないタスクは選択しないでください
             - オブジェクトの位置情報には「（座標: x=数値, z=数値）」形式で絶対座標が含まれています
-            - navigateコマンドでは、この絶対座標を使用してください
+            
+            ## 座標の正確な取得方法【重要】
+            - navigateコマンドでは、ログに記載されている「（座標: x=数値, z=数値）」から**正確な座標値**を抽出してください
+            - 例: "運搬可能な椅子（座標: x=-3.2, z=-5.2）" → navigate(-3.2,-5.2)
+            - 例: "テレビ（座標: x=0.0, z=5.6）" → navigate(0.0,5.6)
+            - **座標は必ずログに記載されている値をそのまま使用し、推測や概算値は使用しないでください**
 
 {get_prompt_template("available_commands")}
 
@@ -82,7 +87,7 @@ class TaskStepPlannerLLM:
             """
             
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -210,7 +215,7 @@ class StepCompletionCheckerLLM:
             """
             
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -308,7 +313,7 @@ class TaskReconstructorLLM:
             """
             
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

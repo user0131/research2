@@ -20,13 +20,16 @@ public class NavMeshAgentController : MonoBehaviour
 {
     [Header("NavMesh Settings")]
     [Tooltip("Movement speed when navigating to target")]
-    public float navigationSpeed = 3.5f;
+    public float navigationSpeed = 1.17f;  // 速度を1/3に調整（元: 3.5f）
     
     [Tooltip("Stopping distance from target")]
-    public float stoppingDistance = 0.5f;
+    public float stoppingDistance = 0.1f;  // より近くで停止（元: 0.5f）
     
     [Tooltip("Rotation speed when navigating")]
     public float rotationSpeed = 120f;
+    
+    [Tooltip("Braking distance for smooth stop")]
+    public float brakingDistance = 1.0f;  // ブレーキ開始距離
     
     // コンポーネント参照
     private NavMeshAgent _agent;
@@ -174,11 +177,22 @@ public class NavMeshAgentController : MonoBehaviour
     /// </summary>
     private void UpdateNavigation()
     {
-        // 到着判定
+        // 目標地点に近づいたら速度を調整（スムーズな停止）
+        if (_agent.remainingDistance <= brakingDistance && _agent.remainingDistance > stoppingDistance)
+        {
+            // ブレーキ区間では速度を徐々に落とす
+            float speedRatio = _agent.remainingDistance / brakingDistance;
+            _agent.speed = Mathf.Lerp(0.2f, navigationSpeed, speedRatio);
+        }
+        
+        // 到着判定（より厳密に）
         if (!_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance)
         {
-            if (!_agent.hasPath || _agent.velocity.sqrMagnitude == 0f)
+            // 速度がほぼ0になったら完全停止
+            if (!_agent.hasPath || _agent.velocity.sqrMagnitude < 0.01f)
             {
+                // 最終位置を正確に設定
+                transform.position = _agent.destination;
                 StopNavigation();
                 return;
             }
@@ -197,10 +211,14 @@ public class NavMeshAgentController : MonoBehaviour
         _agent.stoppingDistance = stoppingDistance;
         _agent.angularSpeed = rotationSpeed;
         
-        // その他の推奨設定
-        _agent.acceleration = 8f;        // 加速度
-        _agent.autoBraking = true;       // 自動ブレーキ
-        _agent.autoRepath = true;        // 自動経路再計算
+        // その他の推奨設定（精密停止用に調整）
+        _agent.acceleration = 4f;         // 加速度を適度に（元: 8f）
+        _agent.autoBraking = true;        // 自動ブレーキ有効
+        _agent.autoRepath = true;         // 自動経路再計算
+        
+        // 精密停止のための追加設定
+        _agent.obstacleAvoidanceType = ObstacleAvoidanceType.HighQualityObstacleAvoidance;
+        _agent.avoidancePriority = 50;    // 回避優先度（0-99、低いほど優先）
     }
     #endregion
 
