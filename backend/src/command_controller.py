@@ -9,11 +9,6 @@ from typing import Dict, List
 from llm_manager import llm_manager
 from step_manager import step_manager
 from storage_manager import storage_manager
-from task_definitions import (
-    get_goal, get_tasks, get_dependencies, 
-    get_task_description, get_task_dependencies,
-    get_task_examples, get_task_example
-)
 
 logger = logging.getLogger(__name__)
 
@@ -27,131 +22,294 @@ class CommandController:
         """ヘルスチェック"""
         return {"status": "healthy", "message": "API is running"}
     
-    def process_logs(self, data: Dict, openai_client) -> Dict:
-        """ログを処理してコマンドを決定（旧システム用）"""
+    # 統合APIフロー用メソッド
+    
+    def process_step(self, data: Dict, openai_client) -> Dict:
+        """
+        統合ステップ処理エンドポイント
+        条件に応じてアルゴリズム的に処理を振り分け
+        """
         try:
             if not data:
-                return {"success": False, "command": "wait", "reasoning": "無効なリクエスト形式"}
+                return {"success": False, "error": "無効なリクエスト形式"}
             
+            # 条件分岐アルゴリズム
+            action_decision = self._decide_action(data)
+            
+            # 決定されたアクションに基づいて処理実行
+            if action_decision["action"] == "reconstruct_error":
+                return self._handle_error_reconstruction(action_decision, data, openai_client)
+            elif action_decision["action"] == "plan_initial":
+                return self._handle_initial_planning(data, openai_client)
+            elif action_decision["action"] == "get_next":
+                return self._handle_get_next_step()
+            elif action_decision["action"] == "check_completion":
+                return self._handle_completion_check(data, openai_client)
+            else:
+                return {"success": False, "error": f"不明なアクション: {action_decision['action']}"}
+            
+        except Exception as e:
+            logger.error(f"Error in process_step: {str(e)}")
+            return {
+                "success": False,
+                "error": f"エラーが発生しました: {str(e)}"
+            }
+    
+    def _decide_action(self, data: Dict) -> Dict:
+        """
+        データとシステム状態に基づいてアクションを決定
+        """
+        # 1. [error] / [attention] ヘッダーチェック
+        if self._has_error_or_attention_header(data):
+            return {
+                "action": "reconstruct_error",
+                "reason": "エラーまたは注意事項が検出されました",
+                "error_type": self._get_error_type(data)
+            }
+        
+        # キューの状態を取得
+        queue_status = step_manager.get_queue_status()
+        
+        # 2. 実行するタスクがない場合（初回）
+        if not queue_status.get("has_pending_steps", False) and queue_status.get("total_steps", 0) == 0:
+            return {
+                "action": "plan_initial",
+                "reason": "実行するタスクがありません（初回計画）"
+            }
+        
+        # 3. キューにタスクが残っている場合
+        if queue_status.get("has_pending_steps", False):
+            return {
+                "action": "get_next",
+                "reason": "キューに実行可能なステップがあります"
+            }
+        
+        # 4. キューを全て消化した場合（終了判定）
+        if queue_status.get("total_steps", 0) > 0 and not queue_status.get("has_pending_steps", False):
+            return {
+                "action": "check_completion",
+                "reason": "全ステップが完了しました（終了判定とタスク完了確認）"
+            }
+        
+        # デフォルト
+        return {
+            "action": "plan_initial",
+            "reason": "想定外の状況のため初回計画にフォールバック"
+        }
+    
+    def _has_error_or_attention_header(self, data: Dict) -> bool:
+        """エラーまたは注意事項のヘッダーが含まれているかチェック"""
+        logs = data.get('logs', [])
+        
+        for log in logs:
+            log_str = str(log).lower()
+            if '[error]' in log_str or '[attention]' in log_str:
+                return True
+        
+        if data.get('error_info') or data.get('error_type'):
+            return True
+            
+        return False
+    
+    def _get_error_type(self, data: Dict) -> str:
+        """エラータイプを特定"""
+        logs = data.get('logs', [])
+        
+        for log in logs:
+            log_str = str(log).lower()
+            if '[error]' in log_str:
+                return "error"
+            elif '[attention]' in log_str:
+                return "attention"
+        
+        return "unknown_error"
+    
+    def _handle_error_reconstruction(self, action_decision: Dict, data: Dict, openai_client) -> Dict:
+        """エラー時のタスク再構成処理（LLM3）"""
+        try:
+            current_step = step_manager.get_step(step_manager.current_step_id) if step_manager.current_step_id else None
+            
+            error_info = {
+                "logs": data.get('logs', []),
+                "error_type": action_decision.get("error_type", "unknown"),
+                "error_details": data.get('error_info', {}),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # LLM3でタスク再構成
+            reconstruction_result = llm_manager.reconstruct_task(error_info, current_step or {}, openai_client)
+            
+            if reconstruction_result.get("new_steps"):
+                step_manager.clear_all_steps()
+                task_id = f"reconstructed_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                step_ids = step_manager.add_steps(task_id, reconstruction_result["new_steps"])
+                
+                logger.info(f"Task reconstructed due to error: {task_id}")
+                
+                return {
+                    "success": True,
+                    "action": "reconstructed_from_error",
+                    "task_id": task_id,
+                    "new_steps_count": len(reconstruction_result["new_steps"]),
+                    "step_ids": step_ids,
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                return {
+                    "success": False,
+                    "action": "reconstruction_failed",
+                    "error": "エラー再構成で新しいステップが生成されませんでした",
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+        except Exception as e:
+            logger.error(f"Error in error reconstruction: {str(e)}")
+            return {
+                "success": False,
+                "action": "reconstruction_error",
+                "error": f"エラー再構成中にエラーが発生: {str(e)}",
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def _handle_initial_planning(self, data: Dict, openai_client) -> Dict:
+        """初回タスク計画処理（LLM1）"""
+        try:
             logs = data.get('logs', [])
             
             if not logs:
-                return {"success": False, "command": "wait", "reasoning": "ログが提供されていません"}
+                return {"success": False, "error": "ログが提供されていません"}
             
-            # 過去のログコンテキストを取得
-            log_context = storage_manager.get_context_for_llm(logs)
+            current_situation = {"logs": logs}
+            steps = llm_manager.plan_task(current_situation, openai_client)
             
-            # 旧システムでの処理（後で削除予定）
-            logger.warning("Using deprecated process_logs endpoint")
+            task_id = f"task_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            step_ids = step_manager.add_steps(task_id, steps)
             
-            # ログエントリを保存
-            storage_manager.add_log_entry(
-                logs=logs,
-                command="wait",
-                reasoning="旧システムでの処理",
-                current_task="unknown",
-                progress="不明"
-            )
+            logger.info(f"Initial task planned: {task_id}")
             
             return {
                 "success": True,
-                "command": "wait",
-                "reasoning": "旧システムは非推奨です。新しいAPIフローを使用してください。",
-                "current_task": "unknown",
-                "progress": "不明"
+                "action": "planned",
+                "task_id": task_id,
+                "steps_planned": len(steps),
+                "step_ids": step_ids,
+                "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
-            logger.error(f"Error processing logs: {str(e)}")
+            logger.error(f"Error in initial planning: {str(e)}")
             return {
                 "success": False,
-                "command": "wait",
-                "reasoning": f"エラーが発生しました: {str(e)}"
-            }
-    
-    def get_logs(self, page: int = 1, per_page: int = 10) -> Dict:
-        """ログ履歴を取得"""
-        try:
-            logs = storage_manager.get_recent_commands(count=per_page)
-            
-            return {
-                "logs": logs,
-                "page": page,
-                "per_page": per_page,
+                "action": "planning_error",
+                "error": f"初回計画中にエラーが発生: {str(e)}",
                 "timestamp": datetime.now().isoformat()
             }
+    
+    def _handle_get_next_step(self) -> Dict:
+        """次ステップ取得処理"""
+        try:
+            next_step = step_manager.get_next_step()
             
-        except Exception as e:
-            logger.error(f"Error getting logs: {str(e)}")
-            return {"error": str(e)}
-    
-    def get_log_stats(self) -> Dict:
-        """ログ統計を取得"""
-        try:
-            stats = storage_manager.get_statistics()
-            return {
-                "statistics": stats,
-                "timestamp": datetime.now().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Error getting log stats: {str(e)}")
-            return {"error": str(e)}
-    
-    def get_task_status(self) -> Dict:
-        """タスクの状況を取得"""
-        try:
-            dependencies = get_dependencies()
-            tasks = get_tasks()
-            goal = get_goal()
+            if next_step is None:
+                return {
+                    "success": True,
+                    "action": "no_steps",
+                    "message": "実行可能なステップがありません",
+                    "timestamp": datetime.now().isoformat()
+                }
+            
+            logger.info(f"Retrieved next step: {next_step['id']}")
             
             return {
-                "goal": goal,
-                "tasks": tasks,
-                "dependencies": dependencies,
+                "success": True,
+                "action": "step_retrieved",
+                "step": next_step,
                 "timestamp": datetime.now().isoformat()
             }
             
         except Exception as e:
-            logger.error(f"Error getting task status: {str(e)}")
-            return {"error": str(e)}
-    
-    def clear_logs(self) -> Dict:
-        """ログをクリア"""
-        try:
-            storage_manager.clear_all()
+            logger.error(f"Error getting next step: {str(e)}")
             return {
-                "message": "ログがクリアされました",
+                "success": False,
+                "action": "get_step_error",
+                "error": f"ステップ取得中にエラーが発生: {str(e)}",
                 "timestamp": datetime.now().isoformat()
             }
-        except Exception as e:
-            logger.error(f"Error clearing logs: {str(e)}")
-            return {"error": str(e)}
     
-    def export_logs(self) -> Dict:
-        """ログをエクスポート"""
+    def _handle_completion_check(self, data: Dict, openai_client) -> Dict:
+        """完了判定処理（LLM2 → LLM1 または LLM3）"""
         try:
-            export_data = storage_manager.export_data()
+            # LLM2でタスクの終了判定
+            completion_status = llm_manager.check_completion(
+                {"task_summary": "全ステップ完了"}, 
+                {"logs": data.get('logs', [])}, 
+                openai_client
+            )
+            
+            # LLM2の判定結果を確認
+            if completion_status.get("action") == "proceed":
+                # タスク完了条件を満たしている → LLM1で新タスク計画
+                logger.info("Task completion criteria satisfied, planning new task")
+                
+                new_planning_result = self._handle_initial_planning(data, openai_client)
+                
+                return {
+                    "success": True,
+                    "action": "task_completed_new_planned",
+                    "completion_reasoning": completion_status.get("reasoning", ""),
+                    "new_planning": new_planning_result,
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                # タスク完了条件を満たしていない → LLM3で完了のためのステップ再構成
+                logger.info("Task completion criteria not satisfied, reconstructing steps for completion")
+                
+                completion_info = {
+                    "logs": data.get('logs', []),
+                    "completion_status": completion_status,
+                    "incomplete_reason": completion_status.get("reasoning", ""),
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                reconstruction_result = llm_manager.reconstruct_task(
+                    completion_info, 
+                    {"task_summary": "タスク完了のための追加ステップが必要"}, 
+                    openai_client
+                )
+                
+                if reconstruction_result.get("new_steps"):
+                    step_manager.clear_all_steps()
+                    task_id = f"completion_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    step_ids = step_manager.add_steps(task_id, reconstruction_result["new_steps"])
+                    
+                    logger.info(f"Completion steps reconstructed: {task_id}")
+                    
+                    return {
+                        "success": True,
+                        "action": "completion_steps_reconstructed", 
+                        "completion_reasoning": completion_status.get("reasoning", ""),
+                        "task_id": task_id,
+                        "new_steps_count": len(reconstruction_result["new_steps"]),
+                        "step_ids": step_ids,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "action": "completion_reconstruction_failed",
+                        "error": "タスク完了のためのステップ再構成に失敗しました",
+                        "completion_reasoning": completion_status.get("reasoning", ""),
+                        "timestamp": datetime.now().isoformat()
+                    }
+            
+        except Exception as e:
+            logger.error(f"Error in completion check: {str(e)}")
             return {
-                "export_data": export_data,
+                "success": False,
+                "action": "completion_check_error",
+                "error": f"完了判定中にエラーが発生: {str(e)}",
                 "timestamp": datetime.now().isoformat()
             }
-        except Exception as e:
-            logger.error(f"Error exporting logs: {str(e)}")
-            return {"error": str(e)}
-    
-    def get_log_context(self) -> Dict:
-        """ログコンテキストを取得"""
-        try:
-            context = storage_manager.get_context_for_llm()
-            return {
-                "context": context,
-                "timestamp": datetime.now().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Error getting log context: {str(e)}")
-            return {"error": str(e)}
-    
-    # 新しいAPIフロー用メソッド
     
     def plan_task(self, data: Dict, openai_client) -> Dict:
         """タスク計画: LLMでタスクをステップに分解してキューに追加"""

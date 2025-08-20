@@ -271,12 +271,137 @@ class StepCompletionCheckerLLM:
             }
 
 
+class TaskReconstructorLLM:
+    """Task Reconstructor LLM - エラー時のタスク再構成"""
+    
+    def reconstruct_task(self, error_info: Dict, current_step: Dict, openai_client) -> Dict:
+        """
+        エラー情報を分析してタスクを再構成
+        
+        Args:
+            error_info: エラー情報
+            current_step: 現在のステップ情報
+            openai_client: OpenAIクライアント
+            
+        Returns:
+            再構成されたタスクとステップ
+        """
+        try:
+            system_prompt = """
+            あなたはTask Reconstructor LLMです。エラーや問題が発生した際に、タスクを再構成・修正してください。
+
+            ## 役割
+            1. **エラー分析**: 発生したエラーの原因と影響を分析
+            2. **問題解決**: エラーを回避・解決する方法を検討
+            3. **タスク再構成**: 新しいアプローチでタスクを再設計
+            4. **ステップ修正**: 問題を回避する新しいステップシーケンスを作成
+
+            ## 分析対象
+            - エラーメッセージとその詳細
+            - 失敗したステップの内容
+            - 環境の変化や制約
+            - 代替アプローチの可能性
+
+            ## 再構成戦略
+            ### エラー回避:
+            - 異なる経路でのアプローチ
+            - より細かいステップへの分割
+            - 前提条件の再確認
+
+            ### 代替手法:
+            - 別のオブジェクトの利用
+            - 手順の変更
+            - 一時的な回避策
+
+            ## 出力形式
+            {
+                "analysis": {
+                    "error_type": "エラーの種類",
+                    "root_cause": "根本原因",
+                    "impact_assessment": "影響度評価"
+                },
+                "reconstruction": {
+                    "strategy": "再構成戦略",
+                    "changes_made": ["行った変更点"],
+                    "risk_mitigation": "リスク軽減策"
+                },
+                "new_steps": [
+                    {
+                        "command": "コマンド名",
+                        "x": 数値 (navigateの場合),
+                        "y": 数値 (navigateの場合), 
+                        "z": 数値 (navigateの場合),
+                        "reasoning": "このステップで達成すべき具体的な目標"
+                    }
+                ]
+            }
+            """
+            
+            user_prompt = f"""
+            以下のエラー情報と失敗ステップを分析し、タスクを再構成してください。
+
+            ## エラー情報
+            {json.dumps(error_info, ensure_ascii=False, indent=2)}
+
+            ## 失敗したステップ
+            {json.dumps(current_step, ensure_ascii=False, indent=2)}
+
+            エラーを回避し、同じ目標を達成するための新しいアプローチを設計してください。
+            元のreasoningを達成できる代替手段を提案してください。
+            """
+            
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                max_tokens=1500,
+                temperature=0.1
+            )
+            
+            response_text = response.choices[0].message.content
+            result = self._extract_json_from_response(response_text)
+            
+            logger.info("Task reconstruction completed")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in reconstruct_task: {str(e)}")
+            return {
+                "analysis": {"error": str(e)},
+                "reconstruction": {"strategy": "エラー回復失敗"},
+                "new_steps": [{"command": "wait", "reasoning": f"再構成エラー: {str(e)}"}]
+            }
+    
+    def _extract_json_from_response(self, response_text: str) -> Dict:
+        """LLM応答からJSONを抽出"""
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            import re
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                try:
+                    return json.loads(json_match.group(1))
+                except json.JSONDecodeError:
+                    pass
+            
+            logger.warning(f"Failed to extract JSON from response: {response_text}")
+            return {
+                "analysis": {"error": "JSON解析失敗"},
+                "reconstruction": {"strategy": "解析失敗"},
+                "new_steps": [{"command": "wait", "reasoning": "JSON解析失敗"}]
+            }
+
+
 class LLMManager:
-    """2つのLLMシステムの統合管理"""
+    """3つのLLMシステムの統合管理"""
     
     def __init__(self):
         self.planner = TaskStepPlannerLLM()
         self.checker = StepCompletionCheckerLLM()
+        self.reconstructor = TaskReconstructorLLM()
     
     def plan_task(self, current_situation: Dict, openai_client) -> List[Dict]:
         """タスク計画 (Task & Step Planner LLM使用)"""
@@ -285,6 +410,10 @@ class LLMManager:
     def check_completion(self, step_info: Dict, execution_result: Dict, openai_client) -> Dict:
         """完了チェック (Step Completion Checker LLM使用)"""
         return self.checker.check_step_completion(step_info, execution_result, openai_client)
+    
+    def reconstruct_task(self, error_info: Dict, current_step: Dict, openai_client) -> Dict:
+        """タスク再構成 (Task Reconstructor LLM使用)"""
+        return self.reconstructor.reconstruct_task(error_info, current_step, openai_client)
 
 # グローバルLLMマネージャーインスタンス
 llm_manager = LLMManager()
