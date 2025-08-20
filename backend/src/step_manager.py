@@ -12,18 +12,22 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
+
 class StepStatus(Enum):
     PENDING = "pending"
     EXECUTING = "executing"
     COMPLETED = "completed"
     FAILED = "failed"
 
+
 class StepManager:
+    
     def __init__(self):
-        """ステップマネージャーの初期化"""
         self.steps: List[Dict] = []
         self.current_step_id: Optional[str] = None
-        
+    
+    # === ステップ追加・作成 ===
+    
     def add_steps(self, task_id: str, steps: List[Dict]) -> List[str]:
         step_ids = []
         
@@ -55,6 +59,8 @@ class StepManager:
             
         logger.info(f"Added {len(steps)} steps for task {task_id}")
         return step_ids
+    
+    # === ステップ実行管理 ===
     
     def get_next_step(self) -> Optional[Dict]:
         # PENDING状態のステップを順序順に探す
@@ -110,6 +116,8 @@ class StepManager:
         logger.warning(f"Step {step_id} not found for failure")
         return False
     
+    # === ステップ取得・検索 ===
+    
     def get_step(self, step_id: str) -> Optional[Dict]:
         for step in self.steps:
             if step["id"] == step_id:
@@ -133,8 +141,9 @@ class StepManager:
             "has_pending_steps": status_counts[StepStatus.PENDING.value] > 0
         }
     
+    # === ステップクリア・管理 ===
+    
     def clear_completed_steps(self):
-        """完了したステップをクリア"""
         initial_count = len(self.steps)
         self.steps = [
             step for step in self.steps 
@@ -146,10 +155,10 @@ class StepManager:
             logger.info(f"Cleared {cleared_count} completed/failed steps")
     
     def clear_all_steps(self):
-        """全ステップをクリア"""
         self.steps.clear()
         self.current_step_id = None
         logger.info("Cleared all steps")
+
 
 # グローバルステップマネージャーインスタンス
 step_manager = StepManager()

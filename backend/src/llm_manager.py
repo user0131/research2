@@ -13,22 +13,11 @@ from constants import get_tasks, get_dependencies, get_task_examples, get_availa
 logger = logging.getLogger(__name__)
 
 class TaskStepPlannerLLM:
-    """Task & Step Planner LLM - タスクをステップシーケンスに分解"""
     
     def __init__(self):
         self.available_commands = get_available_commands()
     
     def plan_task_steps(self, current_situation: Dict, openai_client) -> List[Dict]:
-        """
-        現在の状況からタスクとステップを計画
-        
-        Args:
-            current_situation: 現在の状況（ログ、位置等）
-            openai_client: OpenAIクライアント
-            
-        Returns:
-            ステップシーケンス
-        """
         try:
             # タスク定義を取得
             tasks = get_tasks()
@@ -107,7 +96,6 @@ class TaskStepPlannerLLM:
             return [error_step]
     
     def _validate_steps(self, steps: List[Dict]) -> List[Dict]:
-        """ステップの妥当性をチェック"""
         validated_steps = []
         valid_commands = list(self.available_commands.keys())
         
@@ -125,7 +113,6 @@ class TaskStepPlannerLLM:
         return validated_steps
     
     def _extract_steps_from_response(self, response_text: str) -> List[Dict]:
-        """LLM応答からステップ配列を抽出"""
         try:
             # 直接配列として解析を試行
             return json.loads(response_text)
@@ -157,20 +144,8 @@ class TaskStepPlannerLLM:
 
 
 class StepCompletionCheckerLLM:
-    """Step Completion Checker LLM - ステップ完了判定と次ステップ進行判断"""
     
     def check_step_completion(self, step_info: Dict, execution_result: Dict, openai_client) -> Dict:
-        """
-        ステップの完了状況を分析し、次の行動を判断
-        
-        Args:
-            step_info: 実行されたステップ情報
-            execution_result: Unity側からの実行結果
-            openai_client: OpenAIクライアント
-            
-        Returns:
-            進行判断結果
-        """
         try:
             system_prompt = """
             あなたはStep Completion Checker LLMです。ステップの実行結果を分析し、次の行動を決定してください。
@@ -242,20 +217,8 @@ class StepCompletionCheckerLLM:
 
 
 class TaskReconstructorLLM:
-    """Task Reconstructor LLM - エラー時のタスク再構成"""
     
     def reconstruct_task(self, error_info: Dict, current_step: Dict, openai_client) -> Dict:
-        """
-        エラー情報を分析してタスクを再構成
-        
-        Args:
-            error_info: エラー情報
-            current_step: 現在のステップ情報
-            openai_client: OpenAIクライアント
-            
-        Returns:
-            再構成されたタスクとステップ
-        """
         try:
             system_prompt = """
             あなたはTask Reconstructor LLMです。エラーや問題が発生した際に、タスクを再構成・修正してください。
@@ -341,7 +304,6 @@ class TaskReconstructorLLM:
 
 
 class LLMManager:
-    """3つのLLMシステムの統合管理"""
     
     def __init__(self):
         self.planner = TaskStepPlannerLLM()
@@ -349,15 +311,12 @@ class LLMManager:
         self.reconstructor = TaskReconstructorLLM()
     
     def plan_task(self, current_situation: Dict, openai_client) -> List[Dict]:
-        """タスク計画 (Task & Step Planner LLM使用)"""
         return self.planner.plan_task_steps(current_situation, openai_client)
     
     def check_completion(self, step_info: Dict, execution_result: Dict, openai_client) -> Dict:
-        """完了チェック (Step Completion Checker LLM使用)"""
         return self.checker.check_step_completion(step_info, execution_result, openai_client)
     
     def reconstruct_task(self, error_info: Dict, current_step: Dict, openai_client) -> Dict:
-        """タスク再構成 (Task Reconstructor LLM使用)"""
         return self.reconstructor.reconstruct_task(error_info, current_step, openai_client)
 
 # グローバルLLMマネージャーインスタンス

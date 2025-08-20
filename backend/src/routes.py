@@ -11,22 +11,18 @@ logger = logging.getLogger(__name__)
 
 
 def register_routes(app, get_openai_client):
-    """Flaskアプリにルートを登録"""
+    
+    # === ヘルスチェック ===
     
     @app.route('/api/health', methods=['GET'])
     def health_check():
-        """ヘルスチェック"""
         result = command_controller.health_check()
         return jsonify(result)
     
-    # 統合APIフロー用エンドポイント
+    # === 統合処理エンドポイント ===
     
     @app.route('/api/process', methods=['POST', 'OPTIONS'])
     def process():
-        """
-        統合処理エンドポイント
-        全ての処理を条件分岐アルゴリズムで自動振り分け
-        """
         # CORS プリフライトリクエスト対応
         if request.method == 'OPTIONS':
             return '', 200
@@ -36,16 +32,7 @@ def register_routes(app, get_openai_client):
             
             # 入力データの基本検証
             if data is None:
-                return jsonify({
-                    "success": False,
-                    "command": "wait",
-                    "reasoning": "JSONデータが無効です",
-                    "current_task": None,
-                    "step_id": None,
-                    "x": None,
-                    "y": None,
-                    "z": None
-                }), 400
+                return _create_error_response("JSONデータが無効です"), 400
             
             openai_client = get_openai_client()
             
@@ -62,13 +49,18 @@ def register_routes(app, get_openai_client):
             
         except Exception as e:
             logger.error(f"Error in process route: {str(e)}")
-            return jsonify({
-                "success": False,
-                "command": "wait",
-                "reasoning": f"ルートエラー: {str(e)}",
-                "current_task": None,
-                "step_id": None,
-                "x": None,
-                "y": None,
-                "z": None
-            }), 500
+            return _create_error_response(f"ルートエラー: {str(e)}"), 500
+
+
+def _create_error_response(message: str) -> dict:
+    """エラーレスポンスを生成"""
+    return {
+        "success": False,
+        "command": "wait",
+        "reasoning": message,
+        "current_task": None,
+        "step_id": None,
+        "x": None,
+        "y": None,
+        "z": None
+    }

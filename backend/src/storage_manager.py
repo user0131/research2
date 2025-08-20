@@ -11,7 +11,9 @@ from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
+
 class StorageManager:
+    
     def __init__(self, storage_dir: str = "storage"):
         self.storage_dir = storage_dir
         self.log_file = os.path.join(storage_dir, "log_file.json")
@@ -23,78 +25,13 @@ class StorageManager:
         self._initialize_files()
     
     def _initialize_files(self):
-        """ストレージファイルを初期化"""
         if not os.path.exists(self.log_file):
             with open(self.log_file, 'w', encoding='utf-8') as f:
                 json.dump([], f, ensure_ascii=False, indent=2)
     
-    
-    def clear_all(self):
-        """すべてのデータをクリア"""
-        try:
-            with open(self.log_file, 'w', encoding='utf-8') as f:
-                json.dump([], f, ensure_ascii=False, indent=2)
-            
-            logger.info("Cleared all log data")
-            
-        except Exception as e:
-            logger.error(f"Error clearing log data: {str(e)}")
-    
-    
-    def save_log_record(self, log_record: Dict):
-        """統合ログに記録を保存"""
-        try:
-            with open(self.log_file, 'r', encoding='utf-8') as f:
-                records = json.load(f)
-            
-            records.append(log_record)
-            
-            # 最新の100件のみ保持
-            if len(records) > 100:
-                records = records[-100:]
-            
-            with open(self.log_file, 'w', encoding='utf-8') as f:
-                json.dump(records, f, ensure_ascii=False, indent=2)
-            
-            record_type = log_record.get('log_type') or log_record.get('record_type', 'unknown')
-            logger.info(f"Saved log: {record_type}")
-                
-        except Exception as e:
-            logger.error(f"Error saving log record: {str(e)}")
-    
-    def save_task_completion(self, completion_record: Dict):
-        """タスク完了記録を統合ログに保存"""
-        self.save_log_record(completion_record)
-    
-    def get_log_records(self, count: int = 20, log_type: str = None) -> List[Dict]:
-        """統合ログから記録を取得"""
-        try:
-            with open(self.log_file, 'r', encoding='utf-8') as f:
-                records = json.load(f)
-            
-            # ログタイプでフィルタリング
-            if log_type:
-                filtered_records = [
-                    r for r in records 
-                    if r.get('log_type') == log_type or r.get('record_type') == log_type
-                ]
-                return filtered_records[-count:] if filtered_records else []
-            
-            return records[-count:] if records else []
-            
-        except Exception as e:
-            logger.error(f"Error getting log records: {str(e)}")
-            return []
-    
-    def get_task_completions(self, count: int = 10) -> List[Dict]:
-        """タスク完了記録を取得"""
-        return self.get_log_records(count, "task_completion")
+    # === メインの保存・処理メソッド ===
     
     def process_and_save_logs(self, input_data: Dict, unity_response: Dict, processing_result: Dict):
-        """
-        ログを処理して適切な形式で保存
-        初回ログか、コマンド実行後のログかを判定して保存
-        """
         try:
             logs = input_data.get('logs', [])
             if not logs:
@@ -158,6 +95,68 @@ class StorageManager:
                 
         except Exception as e:
             logger.error(f"Error processing and saving logs: {str(e)}")
+    
+    # === 基本的な保存メソッド ===
+    
+    def save_log_record(self, log_record: Dict):
+        try:
+            with open(self.log_file, 'r', encoding='utf-8') as f:
+                records = json.load(f)
+            
+            records.append(log_record)
+            
+            # 最新の100件のみ保持
+            if len(records) > 100:
+                records = records[-100:]
+            
+            with open(self.log_file, 'w', encoding='utf-8') as f:
+                json.dump(records, f, ensure_ascii=False, indent=2)
+            
+            record_type = log_record.get('log_type') or log_record.get('record_type', 'unknown')
+            logger.info(f"Saved log: {record_type}")
+                
+        except Exception as e:
+            logger.error(f"Error saving log record: {str(e)}")
+    
+    def save_task_completion(self, completion_record: Dict):
+        self.save_log_record(completion_record)
+    
+    # === 取得メソッド ===
+    
+    def get_log_records(self, count: int = 20, log_type: str = None) -> List[Dict]:
+        try:
+            with open(self.log_file, 'r', encoding='utf-8') as f:
+                records = json.load(f)
+            
+            # ログタイプでフィルタリング
+            if log_type:
+                filtered_records = [
+                    r for r in records 
+                    if r.get('log_type') == log_type or r.get('record_type') == log_type
+                ]
+                return filtered_records[-count:] if filtered_records else []
+            
+            return records[-count:] if records else []
+            
+        except Exception as e:
+            logger.error(f"Error getting log records: {str(e)}")
+            return []
+    
+    def get_task_completions(self, count: int = 10) -> List[Dict]:
+        return self.get_log_records(count, "task_completion")
+    
+    # === ユーティリティメソッド ===
+    
+    def clear_all(self):
+        try:
+            with open(self.log_file, 'w', encoding='utf-8') as f:
+                json.dump([], f, ensure_ascii=False, indent=2)
+            
+            logger.info("Cleared all log data")
+            
+        except Exception as e:
+            logger.error(f"Error clearing log data: {str(e)}")
+
 
 # グローバルストレージマネージャーインスタンス
 storage_manager = StorageManager()

@@ -1,9 +1,14 @@
-# 研究室タスク管理システム
+"""
+研究室タスク管理システム定数
+研究室環境での自動化タスクに関する定数・設定値を管理
+"""
 
-# 最終的な目標
+# ======================================================================
+# システム目標とタスク定義
+# ======================================================================
+
 GOAL = "研究室の準備：テレビをONにし、椅子とPCプレートを適切な場所に移動し、PCをプレート上に配置する"
 
-# 行うべきタスク
 TASKS = {
     "tv_switch": "テレビの電源をONにする",
     "chair_move": "椅子をChairAreaに移動する", 
@@ -11,16 +16,18 @@ TASKS = {
     "put_pc_on_plate": "PCをプレート上に配置する"
 }
 
-# 依存関係（DAG）
 DEPENDENCIES = {
-    "tv_switch": [],  # 依存なし（いつでも実行可能）
-    "chair_move": [],  # 依存なし（いつでも実行可能）
-    "pc_plate_move": [],  # 依存なし（いつでも実行可能）
-    "put_pc_on_plate": ["pc_plate_move"],  # PC Plate Moveの完了が必要（プレートが配置されてから）
-    "finish": ["tv_switch", "chair_move", "put_pc_on_plate"]  # TV switch、Chair Move、Put PC on Plateの全てが完了
+    "tv_switch": [],
+    "chair_move": [],
+    "pc_plate_move": [],
+    "put_pc_on_plate": ["pc_plate_move"],
+    "finish": ["tv_switch", "chair_move", "put_pc_on_plate"]
 }
 
-# 利用可能なコマンド
+# ======================================================================
+# 利用可能なコマンド定義
+# ======================================================================
+
 AVAILABLE_COMMANDS = {
     "navigate": {
         "description": "指定座標への移動",
@@ -44,7 +51,10 @@ AVAILABLE_COMMANDS = {
     }
 }
 
-# 共通のプロンプトテンプレート
+# ======================================================================
+# LLMプロンプトテンプレート
+# ======================================================================
+
 PROMPT_TEMPLATES = {
     "available_commands": """
 ## 利用可能なコマンド
@@ -106,7 +116,9 @@ PROMPT_TEMPLATES = {
     }
 }
 
-# タスク実行例（Few-shot prompting用）
+# ======================================================================
+# タスク実行例（Few-shot Prompting用）
+# ======================================================================
 TASK_EXAMPLES = {
     "tv_switch": {
         "description": "テレビの電源をONにする",
@@ -232,46 +244,39 @@ TASK_EXAMPLES = {
     }
 }
 
+# ======================================================================
+# アクセサー関数
+# ======================================================================
+
 def get_goal():
-    """最終的な目標を取得"""
     return GOAL
 
 def get_tasks():
-    """行うべきタスクを取得"""
     return TASKS
 
 def get_dependencies():
-    """依存関係を取得"""
     return DEPENDENCIES
 
 def get_task_description(task_id):
-    """特定のタスクの説明を取得"""
     return TASKS.get(task_id, "未知のタスク")
 
 def get_task_dependencies(task_id):
-    """特定のタスクの依存関係を取得"""
     return DEPENDENCIES.get(task_id, [])
 
 def get_task_examples():
-    """タスク実行例を取得"""
     return TASK_EXAMPLES
 
 def get_task_example(task_id):
-    """特定のタスクの実行例を取得"""
     return TASK_EXAMPLES.get(task_id, {"description": "未知のタスク", "steps": [], "example_command_sequence": []})
 
 def get_available_commands():
-    """利用可能なコマンドを取得"""
     return AVAILABLE_COMMANDS
 
 def get_command_info(command_name):
-    """特定のコマンドの情報を取得"""
     return AVAILABLE_COMMANDS.get(command_name, {"description": "未知のコマンド", "parameters": [], "usage": "使用方法不明"})
 
 def get_prompt_templates():
-    """プロンプトテンプレートを取得"""
     return PROMPT_TEMPLATES
 
 def get_prompt_template(template_name):
-    """特定のプロンプトテンプレートを取得"""
     return PROMPT_TEMPLATES.get(template_name, "")
