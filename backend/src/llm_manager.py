@@ -42,6 +42,10 @@ class TaskStepPlannerLLM:
             1. **現在の状況分析**: プレイヤーの位置、所持アイテム、環境状態
             2. **最適なタスク選択**: DAG依存関係に基づく実行可能タスクの選択
             3. **ステップ分解**: 選択したタスクを具体的なコマンドシーケンスに分解
+            
+            ## 重要な注意事項
+            オブジェクトの位置情報には「（座標: x=数値, z=数値）」形式で絶対座標が含まれています。
+            navigateコマンドでは、この絶対座標を使用してください。
 
 {get_prompt_template("available_commands")}
 
@@ -114,9 +118,9 @@ class TaskStepPlannerLLM:
             else:
                 logger.warning(f"Invalid command in step: {command}")
                 # 無効なコマンドを待機に置き換え
-                step["command"] = "wait"
-                step["reasoning"] = f"無効なコマンド ({command}) のため待機"
-                validated_steps.append(step)
+                error_step = PROMPT_TEMPLATES["error_fallback_step"].copy()
+                error_step["reasoning"] = f"無効なコマンド ({command}) のため待機"
+                validated_steps.append(error_step)
         
         return validated_steps
     
@@ -147,7 +151,9 @@ class TaskStepPlannerLLM:
             
             # デフォルト値を返す
             logger.warning(f"Failed to extract steps from response: {response_text}")
-            return [{"command": "wait", "reasoning": "ステップ解析失敗"}]
+            error_step = PROMPT_TEMPLATES["error_fallback_step"].copy()
+            error_step["reasoning"] = "ステップ解析失敗"
+            return [error_step]
 
 
 class StepCompletionCheckerLLM:
