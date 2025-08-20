@@ -42,6 +42,7 @@ public class LLMCommunicator : MonoBehaviour
     private AccessibilityNarrator logManager;
     private bool isProcessingRequest = false;
     private string currentStepId = null;  // 現在実行中のステップID
+    private string lastCompletedStepId = null;  // 最後に完了報告したステップID
     
     public static LLMCommunicator Instance;
 
@@ -131,9 +132,25 @@ public class LLMCommunicator : MonoBehaviour
         // 0.5秒待機
         yield return new WaitForSeconds(0.5f);
         
+        // 同じステップIDの完了報告を防ぐ
+        if (currentStepId != null && currentStepId == lastCompletedStepId)
+        {
+            if (enableDebugLogs)
+            {
+                Debug.LogWarning($"[LLMCommunicator] ステップ {currentStepId} は既に完了報告済み - スキップ");
+            }
+            yield break;  // コルーチンを終了
+        }
+        
         if (enableDebugLogs)
         {
-            Debug.Log("[LLMCommunicator] 待機完了 - ログ収集開始");
+            Debug.Log($"[LLMCommunicator] 待機完了 - ログ収集開始 (StepID: {currentStepId})");
+        }
+        
+        // 完了報告したステップIDを記録
+        if (currentStepId != null)
+        {
+            lastCompletedStepId = currentStepId;
         }
         
         // AccessibilityNarratorにログ収集を依頼

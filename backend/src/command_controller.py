@@ -377,7 +377,24 @@ class CommandController:
             success = step_manager.complete_step(step_id)
             if not success:
                 logger.warning(f"Failed to complete step: {step_id} - may be already completed")
-                # 既に完了済みの場合は、次のステップを取得する
+                # 既に完了済みの場合、キューの状態を確認
+                queue_status = step_manager.get_queue_status()
+                pending_count = queue_status.get("status_counts", {}).get("pending", 0)
+                executing_count = queue_status.get("status_counts", {}).get("executing", 0)
+                
+                # 全ステップ完了の場合はLLM2による判定へ
+                if pending_count == 0 and executing_count == 0:
+                    logger.info("All steps completed - proceeding to task completion check")
+                    # openai_clientを取得（process_stepから渡されたものを使用する必要がある）
+                    # ここでは暫定的にwaitを返す
+                    return {
+                        "success": True,
+                        "action": ACTIONS["CHECK_TASK_COMPLETION"],
+                        "message": "全ステップ完了 - タスク完了判定が必要",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                # そうでなければ次のステップを取得
                 return self._handle_get_next_step()
             
             logger.info(f"Step completed: {step_id}, getting next step automatically")
