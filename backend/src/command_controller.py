@@ -28,32 +28,119 @@ class CommandController:
         """
         統合ステップ処理エンドポイント
         条件に応じてアルゴリズム的に処理を振り分け
+        Unity用のCommandResponse形式で応答を返す
         """
         try:
             if not data:
-                return {"success": False, "error": "無効なリクエスト形式"}
+                return {
+                    "success": False,
+                    "command": "wait",
+                    "reasoning": "無効なリクエスト形式",
+                    "current_task": None,
+                    "step_id": None,
+                    "x": None,
+                    "y": None,
+                    "z": None
+                }
             
             # 条件分岐アルゴリズム
             action_decision = self._decide_action(data)
             
             # 決定されたアクションに基づいて処理実行
             if action_decision["action"] == "reconstruct_error":
-                return self._handle_error_reconstruction(action_decision, data, openai_client)
+                result = self._handle_error_reconstruction(action_decision, data, openai_client)
             elif action_decision["action"] == "plan_initial":
-                return self._handle_initial_planning(data, openai_client)
+                result = self._handle_initial_planning(data, openai_client)
             elif action_decision["action"] == "get_next":
-                return self._handle_get_next_step()
+                result = self._handle_get_next_step()
             elif action_decision["action"] == "check_completion":
-                return self._handle_completion_check(data, openai_client)
+                result = self._handle_completion_check(data, openai_client)
             else:
-                return {"success": False, "error": f"不明なアクション: {action_decision['action']}"}
+                result = {
+                    "success": False,
+                    "action": "error",
+                    "message": f"不明なアクション: {action_decision['action']}"
+                }
+            
+            # Unity形式に変換して返す
+            return self._convert_to_unity_format(result)
             
         except Exception as e:
             logger.error(f"Error in process_step: {str(e)}")
             return {
                 "success": False,
-                "error": f"エラーが発生しました: {str(e)}"
+                "command": "wait",
+                "reasoning": f"エラーが発生しました: {str(e)}",
+                "current_task": None,
+                "step_id": None,
+                "x": None,
+                "y": None,
+                "z": None
             }
+    
+    def _convert_to_unity_format(self, result: Dict) -> Dict:
+        """
+        バックエンドの応答をUnity用のCommandResponse形式に変換
+        """
+        # 基本的な応答構造
+        unity_response = {
+            "success": result.get("success", False),
+            "command": None,
+            "reasoning": None,
+            "current_task": None,
+            "step_id": None,
+            "x": None,
+            "y": None,
+            "z": None
+        }
+        
+        # アクションに応じた変換
+        action = result.get("action", "")
+        
+        if action == "step_retrieved":
+            # 次ステップ取得時
+            step = result.get("step", {})
+            unity_response["command"] = step.get("command", "wait")
+            unity_response["reasoning"] = step.get("reasoning", "")
+            unity_response["step_id"] = step.get("id", "")
+            unity_response["current_task"] = step.get("task_id", "")
+            
+            # navigateコマンドの場合、座標を設定
+            if step.get("command") == "navigate":
+                unity_response["x"] = step.get("x")
+                unity_response["y"] = step.get("y")
+                unity_response["z"] = step.get("z")
+                
+        elif action in ["planned", "reconstructed_from_error", "task_completed_new_planned", "completion_steps_reconstructed"]:
+            # タスク計画/再構成時は、すぐに次のステップを取得
+            next_step = step_manager.get_next_step()
+            if next_step:
+                unity_response["command"] = next_step.get("command", "wait")
+                unity_response["reasoning"] = next_step.get("reasoning", "")
+                unity_response["step_id"] = next_step.get("id", "")
+                unity_response["current_task"] = result.get("task_id", "")
+                
+                if next_step.get("command") == "navigate":
+                    unity_response["x"] = next_step.get("x")
+                    unity_response["y"] = next_step.get("y")
+                    unity_response["z"] = next_step.get("z")
+            else:
+                # ステップがない場合はwaitコマンド
+                unity_response["command"] = "wait"
+                unity_response["reasoning"] = "新しいタスクを計画中"
+                unity_response["current_task"] = result.get("task_id", "")
+                
+        elif action == "no_steps":
+            # 実行可能なステップがない
+            unity_response["command"] = "wait"
+            unity_response["reasoning"] = "実行可能なステップがありません"
+            
+        else:
+            # その他のアクション
+            unity_response["command"] = "wait"
+            unity_response["reasoning"] = result.get("message", "処理中")
+            
+        return unity_response
     
     def _decide_action(self, data: Dict) -> Dict:
         """

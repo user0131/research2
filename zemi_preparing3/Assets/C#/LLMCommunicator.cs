@@ -11,6 +11,8 @@ using System;
 public class LogRequest
 {
     public List<string> logs;
+    public string step_id;        // 実行中のステップID（オプション）
+    public string error_info;     // エラー情報（オプション）
 }
 
 [System.Serializable]
@@ -20,7 +22,7 @@ public class CommandResponse
     public string reasoning;
     public bool success;
     public string current_task;
-    public string progress;
+    public string step_id;  // ステップID（完了報告用）
     // 座標移動用の追加フィールド
     public float? x;
     public float? y;
@@ -39,6 +41,7 @@ public class LLMCommunicator : MonoBehaviour
     private CommandExecutor commandExecutor;
     private AccessibilityNarrator logManager;
     private bool isProcessingRequest = false;
+    private string currentStepId = null;  // 現在実行中のステップID
     
     public static LLMCommunicator Instance;
 
@@ -136,11 +139,13 @@ public class LLMCommunicator : MonoBehaviour
         // リクエストデータの作成（1つの文字列として格納）
         LogRequest request = new LogRequest();
         request.logs = new List<string> { combinedLog };
+        request.step_id = currentStepId;  // 現在のステップIDを設定（あれば）
+        request.error_info = null;  // エラー情報は今後実装
         
         string jsonData = JsonUtility.ToJson(request);
         
         // HTTPリクエストの作成
-        using (UnityWebRequest webRequest = new UnityWebRequest(backendUrl + "/api/process_logs", "POST"))
+        using (UnityWebRequest webRequest = new UnityWebRequest(backendUrl + "/api/process", "POST"))
         {
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
             webRequest.uploadHandler = new UploadHandlerRaw(bodyRaw);
@@ -160,8 +165,15 @@ public class LLMCommunicator : MonoBehaviour
                     
                     if (response.success && !string.IsNullOrEmpty(response.command))
                     {
+                        // 新しいステップIDを保存
+                        if (!string.IsNullOrEmpty(response.step_id))
+                        {
+                            currentStepId = response.step_id;
+                            Debug.Log($"[LLM] ステップID更新: {currentStepId}");
+                        }
+                        
                         // コマンド実行時にタスク情報も表示(デバッグ用)
-                        Debug.Log($"[LLM] {response.command} コマンドを実行 | タスク: {response.current_task}");
+                        Debug.Log($"[LLM] {response.command} コマンドを実行 | タスク: {response.current_task} | ステップ: {response.step_id}");
                         
                         // コマンド実行開始（CommandExecutorで状態管理）
                         
