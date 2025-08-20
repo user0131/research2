@@ -24,17 +24,24 @@ class TaskStepPlannerLLM:
             dependencies = get_dependencies()
             task_examples = get_task_examples()
             
+            # 完了済みタスク履歴を取得
+            from storage_manager import storage_manager
+            completed_tasks = self._get_completed_tasks_history()
+            
             system_prompt = """
             あなたはTask & Step Planner LLMです。現在の状況を分析し、最適なタスクを選択してステップシーケンスに分解してください。
 
             ## 役割
             1. **現在の状況分析**: プレイヤーの位置、所持アイテム、環境状態
-            2. **最適なタスク選択**: DAG依存関係に基づく実行可能タスクの選択
-            3. **ステップ分解**: 選択したタスクを具体的なコマンドシーケンスに分解
+            2. **完了履歴確認**: 既に完了したタスクを除外し、未完了タスクを特定
+            3. **最適なタスク選択**: DAG依存関係と完了履歴に基づく実行可能タスクの選択
+            4. **ステップ分解**: 選択したタスクを具体的なコマンドシーケンスに分解
             
             ## 重要な注意事項
-            オブジェクトの位置情報には「（座標: x=数値, z=数値）」形式で絶対座標が含まれています。
-            navigateコマンドでは、この絶対座標を使用してください。
+            - 既に完了したタスクは再度実行しないでください
+            - 依存関係を満たしていないタスクは選択しないでください
+            - オブジェクトの位置情報には「（座標: x=数値, z=数値）」形式で絶対座標が含まれています
+            - navigateコマンドでは、この絶対座標を使用してください
 
 {get_prompt_template("available_commands")}
 
@@ -55,7 +62,10 @@ class TaskStepPlannerLLM:
             ## 現在の状況
             {logs_text}
 
-            ## 利用可能なタスク
+            ## 完了済みタスク履歴
+            {json.dumps(completed_tasks, ensure_ascii=False, indent=2)}
+
+            ## タスク一覧
             {json.dumps(tasks, ensure_ascii=False, indent=2)}
 
             ## タスク依存関係
@@ -64,7 +74,8 @@ class TaskStepPlannerLLM:
             ## タスク実行例（ステップ形式の参考）
             {json.dumps(task_examples, ensure_ascii=False, indent=2)}
 
-            現在の状況から最も適切なタスクを選択し、タスク実行例の形式に従ってステップシーケンスを作成してください。
+            **重要**: 完了済みタスク履歴を確認し、既に完了したタスクは除外してください。
+            依存関係を満たし、まだ実行されていないタスクの中から最も適切なものを選択してください。
             各ステップにはreasoningを必ず含めて、そのステップで何を達成するかを明確にしてください。
 
             出力はステップシーケンスの配列のみとしてください。
@@ -94,6 +105,31 @@ class TaskStepPlannerLLM:
             error_step = PROMPT_TEMPLATES["error_fallback_step"].copy()
             error_step["reasoning"] = f"計画エラー: {str(e)}"
             return [error_step]
+    
+    def _get_completed_tasks_history(self) -> List[Dict]:
+        """完了済みタスクの履歴を取得"""
+        try:
+            from storage_manager import storage_manager
+            
+            # タスク完了記録を取得
+            task_completions = storage_manager.get_task_completions(50)  # 最大50件
+            
+            completed_tasks = []
+            for completion in task_completions:
+                if completion.get('record_type') == 'task_completion':
+                    completed_task = {
+                        "task_id": completion.get('completed_task_id', ''),
+                        "completion_time": completion.get('timestamp', ''),
+                        "completion_reasoning": completion.get('completion_reasoning', '')
+                    }
+                    completed_tasks.append(completed_task)
+            
+            logger.info(f"Retrieved {len(completed_tasks)} completed tasks")
+            return completed_tasks
+            
+        except Exception as e:
+            logger.error(f"Error getting completed tasks history: {str(e)}")
+            return []
     
     def _validate_steps(self, steps: List[Dict]) -> List[Dict]:
         validated_steps = []
@@ -220,14 +256,18 @@ class TaskReconstructorLLM:
     
     def reconstruct_task(self, error_info: Dict, current_step: Dict, openai_client) -> Dict:
         try:
+            # 現在のタスクIDを取得してタスク履歴を収集
+            task_execution_history = self._get_task_execution_history(current_step, error_info)
+            
             system_prompt = """
             あなたはTask Reconstructor LLMです。エラーや問題が発生した際に、タスクを再構成・修正してください。
 
             ## 役割
             1. **エラー分析**: 発生したエラーの原因と影響を分析
-            2. **問題解決**: エラーを回避・解決する方法を検討
-            3. **タスク再構成**: 新しいアプローチでタスクを再設計
-            4. **ステップ修正**: 問題を回避する新しいステップシーケンスを作成
+            2. **履歴分析**: 同じタスクで過去に実行されたステップの時系列分析
+            3. **問題解決**: エラーを回避・解決する方法を検討
+            4. **タスク再構成**: 新しいアプローチでタスクを再設計
+            5. **ステップ修正**: 問題を回避する新しいステップシーケンスを作成
 
 {get_prompt_template("available_commands")}
 
@@ -246,7 +286,7 @@ class TaskReconstructorLLM:
             """
             
             user_prompt = f"""
-            以下のエラー情報と失敗ステップを分析し、タスクを再構成してください。
+            以下のエラー情報、失敗ステップ、およびタスク実行履歴を分析し、タスクを再構成してください。
 
             ## エラー情報
             {json.dumps(error_info, ensure_ascii=False, indent=2)}
@@ -254,8 +294,16 @@ class TaskReconstructorLLM:
             ## 失敗したステップ
             {json.dumps(current_step, ensure_ascii=False, indent=2)}
 
+            ## タスク実行履歴（時系列順）
+            {json.dumps(task_execution_history, ensure_ascii=False, indent=2)}
+
+            **分析のポイント:**
+            1. タスク実行履歴から過去に成功/失敗したパターンを特定
+            2. エラーが発生した原因と繰り返しパターンを分析
+            3. 既に試行されたアプローチを避けて新しい手法を検討
+
             エラーを回避し、同じ目標を達成するための新しいアプローチを設計してください。
-            元のreasoningを達成できる代替手段を提案してください。
+            過去の履歴を踏まえ、元のreasoningを達成できる代替手段を提案してください。
             """
             
             response = openai_client.chat.completions.create(
@@ -281,6 +329,62 @@ class TaskReconstructorLLM:
             return {
                 "new_steps": [error_step]
             }
+    
+    def _get_task_execution_history(self, current_step: Dict, error_info: Dict) -> List[Dict]:
+        """同じタスクIDの実行履歴を時系列順で取得"""
+        try:
+            from storage_manager import storage_manager
+            
+            # タスクIDを特定
+            task_id = current_step.get('task_id') or error_info.get('task_id')
+            if not task_id:
+                # step_managerから現在のタスクIDを推測
+                from step_manager import step_manager
+                if step_manager.current_step_id:
+                    current_step_data = step_manager.get_step(step_manager.current_step_id)
+                    task_id = current_step_data.get('task_id') if current_step_data else None
+            
+            if not task_id:
+                logger.warning("No task_id found for task execution history")
+                return []
+            
+            # 全ログを取得してタスクIDでフィルタリング
+            all_logs = storage_manager.get_log_records(100)  # 最大100件
+            task_logs = []
+            
+            for log in all_logs:
+                log_task_id = log.get('task_id')
+                if log_task_id == task_id:
+                    # 必要な情報のみを抽出
+                    if log.get('log_type') == 'command_result_log':
+                        task_log = {
+                            "timestamp": log.get('timestamp', ''),
+                            "step_id": log.get('step_id', ''),
+                            "command": log.get('step_content', {}).get('command', ''),
+                            "reasoning": log.get('step_content', {}).get('reasoning', ''),
+                            "executed_command": log.get('executed_command', ''),
+                            "success": log.get('success', False),
+                            "result_logs": log.get('result_logs', [])
+                        }
+                        task_logs.append(task_log)
+                    elif log.get('log_type') == 'first_log':
+                        task_log = {
+                            "timestamp": log.get('timestamp', ''),
+                            "log_type": "task_start",
+                            "initial_situation": log.get('logs', []),
+                            "action": log.get('action', '')
+                        }
+                        task_logs.append(task_log)
+            
+            # 時系列順でソート
+            task_logs.sort(key=lambda x: x.get('timestamp', ''))
+            
+            logger.info(f"Retrieved {len(task_logs)} execution history entries for task: {task_id}")
+            return task_logs
+            
+        except Exception as e:
+            logger.error(f"Error getting task execution history: {str(e)}")
+            return []
     
     def _extract_json_from_response(self, response_text: str) -> Dict:
         """LLM応答からJSONを抽出"""

@@ -5,10 +5,11 @@ APIエンドポイントの処理ロジックを管理
 
 import logging
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List
 from llm_manager import llm_manager
 from step_manager import step_manager
 from storage_manager import storage_manager
+from constants import ACTIONS, ERROR_MESSAGES
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ class CommandController:
     def process_step(self, data: Dict, openai_client) -> Dict:
         try:
             if not data:
-                return self._create_error_response("無効なリクエスト形式")
+                return self._create_error_response(ERROR_MESSAGES["INVALID_REQUEST"])
             
             # 条件分岐アルゴリズム
             action_decision = self._decide_action(data)
@@ -63,14 +64,16 @@ class CommandController:
     def _execute_action(self, action_decision: Dict, data: Dict, openai_client) -> Dict:
         action = action_decision["action"]
         
-        if action == "reconstruct_error":
+        if action == ACTIONS["RECONSTRUCT_ERROR"]:
             return self._handle_error_reconstruction(action_decision, data, openai_client)
-        elif action == "plan_initial":
+        elif action == ACTIONS["PLAN_INITIAL"]:
             return self._handle_initial_planning(data, openai_client)
-        elif action == "get_next":
+        elif action == ACTIONS["GET_NEXT"]:
             return self._handle_get_next_step()
-        elif action == "check_completion":
-            return self._handle_completion_check(data, openai_client)
+        elif action == ACTIONS["COMPLETE_STEP_AND_GET_NEXT"]:
+            return self._handle_complete_step_and_get_next(data)
+        elif action == ACTIONS["CHECK_TASK_COMPLETION"]:
+            return self._handle_task_completion_check(data, openai_client)
         else:
             return {
                 "success": False,
@@ -92,10 +95,10 @@ class CommandController:
         
         action = result.get("action", "")
         
-        if action == "step_retrieved":
+        if action == ACTIONS["STEP_RETRIEVED"]:
             self._populate_step_response(unity_response, result.get("step", {}))
             
-        elif action in ["planned", "reconstructed_from_error", "task_completed_new_planned", "completion_steps_reconstructed"]:
+        elif action in [ACTIONS["PLANNED"], ACTIONS["RECONSTRUCTED_FROM_ERROR"], ACTIONS["TASK_COMPLETED_NEW_PLANNED"], ACTIONS["COMPLETION_STEPS_RECONSTRUCTED"], ACTIONS["STEP_COMPLETED_NEXT_RETRIEVED"]]:
             next_step = step_manager.get_next_step()
             if next_step:
                 self._populate_step_response(unity_response, next_step)
@@ -105,7 +108,7 @@ class CommandController:
                 unity_response["reasoning"] = "新しいタスクを計画中"
                 unity_response["current_task"] = result.get("task_id", "")
                 
-        elif action == "no_steps":
+        elif action == ACTIONS["NO_STEPS"]:
             unity_response["command"] = "wait"
             unity_response["reasoning"] = "実行可能なステップがありません"
             
@@ -140,31 +143,41 @@ class CommandController:
         
         # キューの状態を取得
         queue_status = step_manager.get_queue_status()
+        pending_count = queue_status.get("status_counts", {}).get("pending", 0)
+        executing_count = queue_status.get("status_counts", {}).get("executing", 0)
+        total_steps = queue_status.get("total_steps", 0)
         
         # 2. 実行するタスクがない場合（初回）
-        if not queue_status.get("has_pending_steps", False) and queue_status.get("total_steps", 0) == 0:
+        if total_steps == 0:
             return {
-                "action": "plan_initial",
+                "action": ACTIONS["PLAN_INITIAL"],
                 "reason": "実行するタスクがありません（初回計画）"
             }
         
-        # 3. キューにタスクが残っている場合
-        if queue_status.get("has_pending_steps", False):
+        # 3. キューにタスクが残っている場合（PENDING または EXECUTING）
+        if pending_count > 0:
             return {
-                "action": "get_next",
+                "action": ACTIONS["GET_NEXT"],
                 "reason": "キューに実行可能なステップがあります"
             }
         
-        # 4. キューを全て消化した場合（終了判定）
-        if queue_status.get("total_steps", 0) > 0 and not queue_status.get("has_pending_steps", False):
+        # 4. コマンド実行完了通知の場合（step_idがある場合）
+        if data.get("step_id") and executing_count > 0:
             return {
-                "action": "check_completion",
-                "reason": "全ステップが完了しました（終了判定とタスク完了確認）"
+                "action": ACTIONS["COMPLETE_STEP_AND_GET_NEXT"],
+                "reason": "ステップ完了処理後、次のステップを取得"
+            }
+        
+        # 5. キューが空になった場合（PENDING=0, EXECUTING=0）- タスク完了判定
+        if pending_count == 0 and executing_count == 0 and total_steps > 0:
+            return {
+                "action": ACTIONS["CHECK_TASK_COMPLETION"],
+                "reason": "全ステップが完了しました（タスク完了判定）"
             }
         
         # デフォルト
         return {
-            "action": "plan_initial",
+            "action": ACTIONS["PLAN_INITIAL"],
             "reason": "想定外の状況のため初回計画にフォールバック"
         }
     
@@ -214,7 +227,7 @@ class CommandController:
                 
                 return {
                     "success": True,
-                    "action": "reconstructed_from_error",
+                    "action": ACTIONS["RECONSTRUCTED_FROM_ERROR"],
                     "task_id": task_id,
                     "new_steps_count": len(reconstruction_result["new_steps"]),
                     "step_ids": step_ids,
@@ -254,7 +267,7 @@ class CommandController:
             
             return {
                 "success": True,
-                "action": "planned",
+                "action": ACTIONS["PLANNED"],
                 "task_id": task_id,
                 "steps_planned": len(steps),
                 "step_ids": step_ids,
@@ -277,7 +290,7 @@ class CommandController:
             if next_step is None:
                 return {
                     "success": True,
-                    "action": "no_steps",
+                    "action": ACTIONS["NO_STEPS"],
                     "message": "実行可能なステップがありません",
                     "timestamp": datetime.now().isoformat()
                 }
@@ -286,7 +299,7 @@ class CommandController:
             
             return {
                 "success": True,
-                "action": "step_retrieved",
+                "action": ACTIONS["STEP_RETRIEVED"],
                 "step": next_step,
                 "timestamp": datetime.now().isoformat()
             }
@@ -300,77 +313,216 @@ class CommandController:
                 "timestamp": datetime.now().isoformat()
             }
     
-    def _handle_completion_check(self, data: Dict, openai_client) -> Dict:
+    
+    def _get_latest_command_execution_data(self, data: Dict) -> tuple:
+        """最新のコマンド実行結果をstorageから取得してLLM2用に整形"""
         try:
-            completion_status = llm_manager.check_completion(
-                {"task_summary": "全ステップ完了"}, 
-                {"logs": data.get('logs', [])}, 
-                openai_client
-            )
+            # 最新のコマンド実行結果ログを取得
+            latest_logs = storage_manager.get_log_records(1, "command_result_log")
             
-            if completion_status.get("action") == "proceed":
-                # タスク完了条件を満たしている → 新タスク計画
-                logger.info("Task completion criteria satisfied, planning new task")
+            if latest_logs:
+                latest_log = latest_logs[0]
                 
-                new_planning_result = self._handle_initial_planning(data, openai_client)
-                
-                return {
-                    "success": True,
-                    "action": "task_completed_new_planned",
-                    "completion_reasoning": completion_status.get("reasoning", ""),
-                    "new_planning": new_planning_result,
-                    "timestamp": datetime.now().isoformat()
+                # step_info: ステップの詳細情報
+                step_content = latest_log.get("step_content", {})
+                step_info = {
+                    "command": step_content.get("command", ""),
+                    "reasoning": step_content.get("reasoning", ""),
+                    "x": step_content.get("x"),
+                    "z": step_content.get("z"),
+                    "step_id": latest_log.get("step_id", ""),
+                    "task_id": latest_log.get("task_id", "")
                 }
+                
+                # execution_result: 実行結果の詳細
+                execution_result = {
+                    "executed_command": latest_log.get("executed_command", ""),
+                    "result_logs": latest_log.get("result_logs", []),
+                    "success": latest_log.get("success", False),
+                    "timestamp": latest_log.get("timestamp", ""),
+                    "current_logs": data.get('logs', [])  # 現在のリクエストログも追加
+                }
+                
+                logger.info(f"Retrieved latest command execution data for step: {step_info.get('step_id')}")
+                return step_info, execution_result
+            
             else:
-                # タスク完了条件を満たしていない → 完了のためのステップ再構成
-                logger.info("Task completion criteria not satisfied, reconstructing steps for completion")
+                # フォールバック: storageにデータがない場合
+                logger.warning("No command execution logs found in storage, using fallback data")
+                step_info = {"task_summary": "全ステップ完了"}
+                execution_result = {"logs": data.get('logs', [])}
+                return step_info, execution_result
                 
-                completion_info = {
-                    "logs": data.get('logs', []),
-                    "completion_status": completion_status,
-                    "incomplete_reason": completion_status.get("reasoning", ""),
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                reconstruction_result = llm_manager.reconstruct_task(
-                    completion_info, 
-                    {"task_summary": "タスク完了のための追加ステップが必要"}, 
-                    openai_client
-                )
-                
-                if reconstruction_result.get("new_steps"):
-                    step_manager.clear_all_steps()
-                    task_id = f"completion_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                    step_ids = step_manager.add_steps(task_id, reconstruction_result["new_steps"])
-                    
-                    logger.info(f"Completion steps reconstructed: {task_id}")
-                    
-                    return {
-                        "success": True,
-                        "action": "completion_steps_reconstructed", 
-                        "completion_reasoning": completion_status.get("reasoning", ""),
-                        "task_id": task_id,
-                        "new_steps_count": len(reconstruction_result["new_steps"]),
-                        "step_ids": step_ids,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "action": "completion_reconstruction_failed",
-                        "error": "タスク完了のためのステップ再構成に失敗しました",
-                        "completion_reasoning": completion_status.get("reasoning", ""),
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    
         except Exception as e:
-            logger.error(f"Error in completion check: {str(e)}")
+            logger.error(f"Error retrieving latest command execution data: {str(e)}")
+            # エラー時のフォールバック
+            step_info = {"task_summary": "全ステップ完了"}
+            execution_result = {"logs": data.get('logs', [])}
+            return step_info, execution_result
+    
+    def _handle_complete_step_and_get_next(self, data: Dict) -> Dict:
+        """ステップ完了処理後、次のステップを自動的に取得"""
+        try:
+            step_id = data.get("step_id")
+            if not step_id:
+                return self._create_error_response(ERROR_MESSAGES["MISSING_STEP_ID"])
+            
+            # ステップを完了状態に変更
+            success = step_manager.complete_step(step_id)
+            if not success:
+                logger.warning(f"Failed to complete step: {step_id}")
+            
+            logger.info(f"Step completed: {step_id}, getting next step automatically")
+            
             return {
-                "success": False,
-                "action": "completion_check_error",
-                "error": f"完了判定中にエラーが発生: {str(e)}",
+                "success": True,
+                "action": ACTIONS["STEP_COMPLETED_NEXT_RETRIEVED"],
+                "completed_step_id": step_id,
                 "timestamp": datetime.now().isoformat()
             }
+            
+        except Exception as e:
+            logger.error(f"Error in complete step and get next: {str(e)}")
+            return self._create_error_response(f"{ERROR_MESSAGES['STEP_COMPLETION_ERROR']}: {str(e)}")
+    
+    def _handle_task_completion_check(self, data: Dict, openai_client) -> Dict:
+        """タスク全体の完了判定（LLM2をタスク完了時のみ呼び出し）"""
+        try:
+            current_task_id = self._get_current_task_id()
+            task_execution_history = self._get_task_execution_history_for_completion(current_task_id)
+            
+            completion_status = self._check_task_completion_with_llm(current_task_id, task_execution_history, data, openai_client)
+            
+            if completion_status.get("action") == "proceed":
+                return self._handle_task_completed(current_task_id, completion_status, data, openai_client)
+            else:
+                return self._handle_task_incomplete(current_task_id, completion_status, task_execution_history, data, openai_client)
+                    
+        except Exception as e:
+            logger.error(f"Error in task completion check: {str(e)}")
+            return self._create_error_response(f"{ERROR_MESSAGES['TASK_COMPLETION_CHECK_ERROR']}: {str(e)}")
+    
+    def _check_task_completion_with_llm(self, task_id: str, history: List[Dict], data: Dict, openai_client) -> Dict:
+        """LLM2でタスク全体の完了判定"""
+        return llm_manager.check_completion(
+            {"task_id": task_id, "task_summary": "全ステップ完了"},
+            {"task_execution_history": history, "current_logs": data.get('logs', [])},
+            openai_client
+        )
+    
+    def _handle_task_completed(self, task_id: str, completion_status: Dict, data: Dict, openai_client) -> Dict:
+        """タスク完了時の処理"""
+        logger.info("Task completion criteria satisfied, planning new task")
+        new_planning_result = self._handle_initial_planning(data, openai_client)
+        
+        return {
+            "success": True,
+            "action": ACTIONS["TASK_COMPLETED_NEW_PLANNED"],
+            "completed_task_id": task_id,
+            "completion_reasoning": completion_status.get("reasoning", ""),
+            "new_planning": new_planning_result,
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def _handle_task_incomplete(self, task_id: str, completion_status: Dict, history: List[Dict], data: Dict, openai_client) -> Dict:
+        """タスク未完了時の再構成処理"""
+        logger.info("Task completion criteria not satisfied, reconstructing steps for completion")
+        
+        completion_info = {
+            "logs": data.get('logs', []),
+            "completion_status": completion_status,
+            "incomplete_reason": completion_status.get("reasoning", ""),
+            "task_execution_history": history,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        reconstruction_result = llm_manager.reconstruct_task(
+            completion_info,
+            {"task_id": task_id, "task_summary": "タスク完了のための追加ステップが必要"},
+            openai_client
+        )
+        
+        if reconstruction_result.get("new_steps"):
+            step_manager.clear_all_steps()
+            new_task_id = f"completion_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            step_ids = step_manager.add_steps(new_task_id, reconstruction_result["new_steps"])
+            
+            logger.info(f"Completion steps reconstructed: {new_task_id}")
+            
+            return {
+                "success": True,
+                "action": ACTIONS["COMPLETION_STEPS_RECONSTRUCTED"],
+                "completion_reasoning": completion_status.get("reasoning", ""),
+                "task_id": new_task_id,
+                "new_steps_count": len(reconstruction_result["new_steps"]),
+                "step_ids": step_ids,
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            return {
+                "success": False,
+                "action": "completion_reconstruction_failed",
+                "error": "タスク完了のためのステップ再構成に失敗しました",
+                "completion_reasoning": completion_status.get("reasoning", ""),
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def _get_current_task_id(self) -> str:
+        """現在のタスクIDを取得"""
+        try:
+            # step_managerから現在実行中または最新のタスクIDを取得
+            if step_manager.current_step_id:
+                current_step = step_manager.get_step(step_manager.current_step_id)
+                if current_step:
+                    return current_step.get('task_id', '')
+            
+            # current_step_idがない場合、最新のCOMPLETEDステップからタスクIDを取得
+            queue_status = step_manager.get_queue_status()
+            if queue_status.get("total_steps", 0) > 0:
+                # 最新のステップのタスクIDを取得
+                latest_step = step_manager.steps[-1] if step_manager.steps else None
+                if latest_step:
+                    return latest_step.get('task_id', '')
+            
+            return ""
+        except Exception as e:
+            logger.error(f"{ERROR_MESSAGES['CURRENT_TASK_ID_ERROR']}: {str(e)}")
+            return ""
+    
+    def _get_task_execution_history_for_completion(self, task_id: str) -> List[Dict]:
+        """タスク完了判定用の実行履歴を取得"""
+        try:
+            if not task_id:
+                return []
+            
+            # storageから同じタスクIDの実行ログを取得するためのベース処理
+            
+            # storageから同じタスクIDの実行ログを取得
+            all_logs = storage_manager.get_log_records(100)
+            task_execution_logs = []
+            
+            for log in all_logs:
+                if log.get('task_id') == task_id and log.get('log_type') == 'command_result_log':
+                    execution_log = {
+                        "timestamp": log.get('timestamp', ''),
+                        "step_id": log.get('step_id', ''),
+                        "command": log.get('step_content', {}).get('command', ''),
+                        "reasoning": log.get('step_content', {}).get('reasoning', ''),
+                        "executed_command": log.get('executed_command', ''),
+                        "success": log.get('success', False),
+                        "result_logs": log.get('result_logs', [])
+                    }
+                    task_execution_logs.append(execution_log)
+            
+            # 時系列順でソート
+            task_execution_logs.sort(key=lambda x: x.get('timestamp', ''))
+            
+            logger.info(f"Retrieved {len(task_execution_logs)} execution logs for task completion check: {task_id}")
+            return task_execution_logs
+            
+        except Exception as e:
+            logger.error(f"{ERROR_MESSAGES['TASK_EXECUTION_HISTORY_ERROR']}: {str(e)}")
+            return []
 
 
 # グローバルコントローラーインスタンス

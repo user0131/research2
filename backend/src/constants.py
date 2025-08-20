@@ -280,3 +280,33 @@ def get_prompt_templates():
 
 def get_prompt_template(template_name):
     return PROMPT_TEMPLATES.get(template_name, "")
+
+# ======================================================================
+# システム定数
+# ======================================================================
+
+# アクション名
+ACTIONS = {
+    "RECONSTRUCT_ERROR": "reconstruct_error",
+    "PLAN_INITIAL": "plan_initial", 
+    "GET_NEXT": "get_next",
+    "COMPLETE_STEP_AND_GET_NEXT": "complete_step_and_get_next",
+    "CHECK_TASK_COMPLETION": "check_task_completion",
+    "STEP_RETRIEVED": "step_retrieved",
+    "PLANNED": "planned",
+    "RECONSTRUCTED_FROM_ERROR": "reconstructed_from_error",
+    "TASK_COMPLETED_NEW_PLANNED": "task_completed_new_planned",
+    "COMPLETION_STEPS_RECONSTRUCTED": "completion_steps_reconstructed",
+    "STEP_COMPLETED_NEXT_RETRIEVED": "step_completed_next_retrieved",
+    "NO_STEPS": "no_steps"
+}
+
+# エラーメッセージ
+ERROR_MESSAGES = {
+    "INVALID_REQUEST": "無効なリクエスト形式",
+    "MISSING_STEP_ID": "step_idが指定されていません",
+    "STEP_COMPLETION_ERROR": "ステップ完了処理中にエラーが発生",
+    "TASK_COMPLETION_CHECK_ERROR": "タスク完了判定中にエラーが発生",
+    "CURRENT_TASK_ID_ERROR": "現在のタスクID取得中にエラーが発生",
+    "TASK_EXECUTION_HISTORY_ERROR": "タスク実行履歴取得中にエラーが発生"
+}
