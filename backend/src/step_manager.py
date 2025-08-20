@@ -25,19 +25,14 @@ class StepManager:
         self.current_step_id: Optional[str] = None
         
     def add_steps(self, task_id: str, steps: List[Dict]) -> List[str]:
-        """
-        タスクから生成されたステップをキューに追加
-        
-        Args:
-            task_id: タスクID
-            steps: ステップリスト
-            
-        Returns:
-            追加されたステップのIDリスト
-        """
         step_ids = []
         
         for i, step in enumerate(steps):
+            # ステップの基本妥当性チェック
+            if not step.get("command"):
+                logger.warning(f"Step {i} missing command, skipping")
+                continue
+                
             step_id = str(uuid.uuid4())
             step_data = {
                 "id": step_id,
@@ -45,8 +40,10 @@ class StepManager:
                 "order": i,
                 "status": StepStatus.PENDING.value,
                 "command": step.get("command"),
-                "parameters": step.get("parameters", {}),
-                "description": step.get("description", ""),
+                "reasoning": step.get("reasoning", ""),
+                "x": step.get("x"),
+                "y": step.get("y"),
+                "z": step.get("z"),
                 "created_at": datetime.now().isoformat(),
                 "started_at": None,
                 "completed_at": None,
@@ -60,12 +57,6 @@ class StepManager:
         return step_ids
     
     def get_next_step(self) -> Optional[Dict]:
-        """
-        実行すべき次のステップを取得
-        
-        Returns:
-            次のステップ、またはNone
-        """
         # PENDING状態のステップを順序順に探す
         pending_steps = [
             step for step in self.steps 
@@ -75,27 +66,20 @@ class StepManager:
         if not pending_steps:
             return None
             
-        # 最も早い順序のステップを選択
+        # 最も早い順序のステップを選択（タスクID順、その後order順）
         next_step = min(pending_steps, key=lambda x: (x["task_id"], x["order"]))
+        
+        logger.debug(f"Selected next step from {len(pending_steps)} pending steps")
         
         # ステップを実行中状態に変更
         next_step["status"] = StepStatus.EXECUTING.value
         next_step["started_at"] = datetime.now().isoformat()
         self.current_step_id = next_step["id"]
         
-        logger.info(f"Starting step {next_step['id']}: {next_step['description']}")
+        logger.info(f"Starting step {next_step['id']}: {next_step['command']} - {next_step['reasoning']}")
         return next_step
     
     def complete_step(self, step_id: str) -> bool:
-        """
-        ステップを完了状態にマーク
-        
-        Args:
-            step_id: ステップID
-            
-        Returns:
-            成功した場合True
-        """
         for step in self.steps:
             if step["id"] == step_id:
                 step["status"] = StepStatus.COMPLETED.value
@@ -111,16 +95,6 @@ class StepManager:
         return False
     
     def fail_step(self, step_id: str, error_message: str) -> bool:
-        """
-        ステップを失敗状態にマーク
-        
-        Args:
-            step_id: ステップID
-            error_message: エラーメッセージ
-            
-        Returns:
-            成功した場合True
-        """
         for step in self.steps:
             if step["id"] == step_id:
                 step["status"] = StepStatus.FAILED.value
@@ -137,39 +111,15 @@ class StepManager:
         return False
     
     def get_step(self, step_id: str) -> Optional[Dict]:
-        """
-        指定されたIDのステップを取得
-        
-        Args:
-            step_id: ステップID
-            
-        Returns:
-            ステップデータ、またはNone
-        """
         for step in self.steps:
             if step["id"] == step_id:
                 return step
         return None
     
     def get_task_steps(self, task_id: str) -> List[Dict]:
-        """
-        指定されたタスクの全ステップを取得
-        
-        Args:
-            task_id: タスクID
-            
-        Returns:
-            ステップリスト
-        """
         return [step for step in self.steps if step["task_id"] == task_id]
     
     def get_queue_status(self) -> Dict:
-        """
-        キューの状態を取得
-        
-        Returns:
-            キューの状態情報
-        """
         status_counts = {}
         for status in StepStatus:
             status_counts[status.value] = len([
