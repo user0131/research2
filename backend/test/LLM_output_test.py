@@ -15,8 +15,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 src_path = os.path.join(current_dir, '..', 'src')
 sys.path.insert(0, src_path)
 
-import command_controller
-from constants import ACTIONS
+from services.command_controller import command_controller
+from config.constants import ACTIONS
 
 class MockOpenAIClient:
     """OpenAIクライアントのモック"""
@@ -48,7 +48,7 @@ class LLMOutputTester:
     def setup_mocks(self):
         """モックの設定"""
         # Step manager をリセット
-        with patch('command_controller.step_manager') as mock_step_manager:
+        with patch('services.command_controller.step_manager') as mock_step_manager:
             mock_step_manager.get_queue_status.return_value = {
                 "total_steps": 0,
                 "status_counts": {"pending": 0, "executing": 0, "completed": 0, "failed": 0},
@@ -67,7 +67,7 @@ class LLMOutputTester:
             mock_client = MockOpenAIClient()
             
             # テスト実行
-            result = command_controller.command_controller.process_step(data, mock_client)
+            result = command_controller.process_step(data, mock_client)
             
             print(f"期待するアクション: {expected_action}")
             
@@ -122,7 +122,7 @@ class LLMOutputTester:
     
     def test_initial_planning(self):
         """初回タスク計画のテスト"""
-        with patch('command_controller.step_manager') as mock_step_manager:
+        with patch('services.command_controller.step_manager') as mock_step_manager:
             # 空のキュー状態をモック
             mock_step_manager.get_queue_status.return_value = {
                 "total_steps": 0,
@@ -155,7 +155,7 @@ class LLMOutputTester:
                 ]
             }
             
-            with patch('command_controller.llm_manager') as mock_llm:
+            with patch('services.command_controller.llm_manager') as mock_llm:
                 # LLM1のレスポンスをモック
                 mock_llm.plan_task.return_value = [
                     {
@@ -173,7 +173,7 @@ class LLMOutputTester:
     
     def test_get_next_step(self):
         """次ステップ取得のテスト"""
-        with patch('command_controller.step_manager') as mock_step_manager:
+        with patch('services.command_controller.step_manager') as mock_step_manager:
             # ペンディングステップありの状態をモック
             mock_step_manager.get_queue_status.return_value = {
                 "total_steps": 3,
@@ -213,7 +213,7 @@ class LLMOutputTester:
     
     def test_complete_step_and_get_next(self):
         """ステップ完了後次ステップ取得のテスト"""
-        with patch('command_controller.step_manager') as mock_step_manager:
+        with patch('services.command_controller.step_manager') as mock_step_manager:
             # 実行中ステップありの状態をモック
             mock_step_manager.get_queue_status.return_value = {
                 "total_steps": 3,
@@ -253,7 +253,7 @@ class LLMOutputTester:
     
     def test_task_completion_check(self):
         """タスク完了判定のテスト"""
-        with patch('command_controller.step_manager') as mock_step_manager:
+        with patch('services.command_controller.step_manager') as mock_step_manager:
             # 全ステップ完了の状態をモック
             mock_step_manager.get_queue_status.return_value = {
                 "total_steps": 3,
@@ -287,7 +287,7 @@ class LLMOutputTester:
                 ]
             }
             
-            with patch('command_controller.llm_manager') as mock_llm:
+            with patch('services.command_controller.llm_manager') as mock_llm:
                 # LLM2の完了判定をモック
                 mock_llm.check_completion.return_value = {
                     "action": "proceed",
@@ -318,7 +318,7 @@ class LLMOutputTester:
     
     def test_error_reconstruction(self):
         """エラー再構成のテスト"""
-        with patch('command_controller.step_manager') as mock_step_manager:
+        with patch('services.command_controller.step_manager') as mock_step_manager:
             mock_step_manager.get_queue_status.return_value = {
                 "total_steps": 2,
                 "status_counts": {"pending": 1, "executing": 0, "completed": 1, "failed": 0},
@@ -351,7 +351,7 @@ class LLMOutputTester:
                 ]
             }
             
-            with patch('command_controller.llm_manager') as mock_llm:
+            with patch('services.command_controller.llm_manager') as mock_llm:
                 # LLM3の再構成をモック
                 mock_llm.reconstruct_task.return_value = {
                     "new_steps": [
@@ -390,7 +390,7 @@ class LLMOutputTester:
     
     def test_missing_step_id(self):
         """step_id不足のテスト"""
-        with patch('command_controller.step_manager') as mock_step_manager:
+        with patch('services.command_controller.step_manager') as mock_step_manager:
             mock_step_manager.get_queue_status.return_value = {
                 "total_steps": 2,
                 "status_counts": {"pending": 1, "executing": 1, "completed": 0, "failed": 0},
@@ -428,7 +428,7 @@ class LLMOutputTester:
         print("🧪 LLM出力テストを開始します...\n")
         
         # 各種モックのパッチ
-        with patch('command_controller.storage_manager') as mock_storage:
+        with patch('services.command_controller.storage_manager') as mock_storage:
             mock_storage.process_and_save_logs.return_value = None
             mock_storage.get_log_records.return_value = []
             

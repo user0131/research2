@@ -15,9 +15,9 @@ src_path = os.path.join(current_dir, '..', 'src')
 sys.path.insert(0, src_path)
 
 from openai import OpenAI
-import command_controller
-from step_manager import step_manager
-from storage_manager import storage_manager
+from services.command_controller import command_controller
+from services.step_manager import step_manager
+from services.storage_manager import storage_manager
 
 class IntegrationFlowTester:
     """統合フローテストクラス"""
@@ -68,7 +68,7 @@ class IntegrationFlowTester:
             ]
         }
         
-        result1 = command_controller.command_controller.process_step(initial_situation, self.openai_client)
+        result1 = command_controller.process_step(initial_situation, self.openai_client)
         print(f"✅ LLM1結果: {result1['command']} - {result1['reasoning']}")
         
         # キューの状態確認
@@ -103,7 +103,7 @@ class IntegrationFlowTester:
             }
             
             # 次のステップを取得
-            next_result = command_controller.command_controller.process_step(command_completion_data, self.openai_client)
+            next_result = command_controller.process_step(command_completion_data, self.openai_client)
             print(f"📌 実行コマンド: {next_result['command']}")
             if next_result.get('reasoning'):
                 print(f"   理由: {next_result['reasoning'][:100]}...")
@@ -145,7 +145,7 @@ class IntegrationFlowTester:
         }
         
         # 最終的なタスク完了判定
-        final_result = command_controller.command_controller.process_step(completion_data, self.openai_client)
+        final_result = command_controller.process_step(completion_data, self.openai_client)
         print(f"🎉 最終結果: {final_result['command']} - {final_result['reasoning']}")
         
         # 完了時のキュー状態
@@ -191,7 +191,7 @@ class IntegrationFlowTester:
         }
         
         # LLM1でタスク計画
-        result = command_controller.command_controller.process_step(multi_step_situation, self.openai_client)
+        result = command_controller.process_step(multi_step_situation, self.openai_client)
         
         # キューの詳細状態を追跡
         queue_snapshots = []
@@ -233,7 +233,7 @@ class IntegrationFlowTester:
             }
             
             # ステップ完了と次ステップ取得
-            next_result = command_controller.command_controller.process_step(step_completion_data, self.openai_client)
+            next_result = command_controller.process_step(step_completion_data, self.openai_client)
             
             # キュー状態のスナップショット
             current_queue = step_manager.get_queue_status()
@@ -289,7 +289,7 @@ class IntegrationFlowTester:
             ]
         }
         
-        success_result = command_controller.command_controller.process_step(success_data, self.openai_client)
+        success_result = command_controller.process_step(success_data, self.openai_client)
         print(f"成功判定結果: {success_result['command']} - {success_result['reasoning']}")
         
         # 失敗パターンのテスト
@@ -313,7 +313,7 @@ class IntegrationFlowTester:
             ]
         }
         
-        failure_result = command_controller.command_controller.process_step(failure_data, self.openai_client)
+        failure_result = command_controller.process_step(failure_data, self.openai_client)
         print(f"失敗時の対応: {failure_result['command']} - {failure_result['reasoning'][:100]}...")
         
         return {

@@ -14,8 +14,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 src_path = os.path.join(current_dir, '..', 'src')
 sys.path.insert(0, src_path)
 
-from llm_manager import llm_manager
-from constants import get_tasks, get_dependencies, get_task_examples, get_available_commands
+from services.llm_manager import llm_manager
+from config.constants import get_tasks, get_dependencies, get_task_examples, get_available_commands
 from openai import OpenAI
 
 class OpenAIRealTester:
