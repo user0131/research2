@@ -9,10 +9,9 @@ services:
     # "5000:5000" → ホストの5000番ポートをコンテナの5000番に転送（Flask APIを外部から呼び出せるようにする）。
     ports:
       - "5000:5000"
-    # 環境変数設定。OPENAI_API_KEYはホストの環境変数から引き継ぎ、FLASK_ENV=developmentでFlaskを開発モードに
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - FLASK_ENV=development
+    # 環境変数設定。.envファイルから読み込む
+    env_file:
+      - .env
     # ホストのカレントディレクトリをコンテナ内の /app にマウント
     volumes:
       - .:/app

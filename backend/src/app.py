@@ -3,7 +3,11 @@ from flask_cors import CORS
 from openai import OpenAI
 import os
 import logging
+from dotenv import load_dotenv
 from routes.main import register_routes
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ログ設定
 logging.basicConfig(level=logging.INFO)
@@ -28,4 +32,7 @@ def get_openai_client():
 register_routes(app, get_openai_client)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    debug = os.environ.get('FLASK_ENV', 'production') == 'development'
+    host = os.environ.get('HOST', '0.0.0.0')
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=debug, host=host, port=port) 
