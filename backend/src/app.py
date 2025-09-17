@@ -3,7 +3,7 @@ from flask_cors import CORS
 from openai import OpenAI
 import os
 import logging
-from routes import register_routes
+from routes.main import register_routes
 
 # ログ設定
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# OpenAI API設定（遅延初期化）
+# OpenAI API設定
 client = None
 
 def get_openai_client():

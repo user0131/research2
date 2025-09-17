@@ -38,33 +38,6 @@ cd ./backend && docker-compose down
 cd ./backend && docker-compose up -d --build
 ```
 
-## API エンドポイント
-
-### 統合プロセシングエンドポイント
-```
-POST /api/process
-Content-Type: application/json
-
-{
-  "logs": ["現在の状況ログ"],
-  "step_id": "実行完了ステップID (オプション)",
-  "execution_result": "実行結果 (オプション)"
-}
-```
-
-**レスポンス形式:**
-```json
-{
-  "success": true,
-  "command": "navigate(0.1,5.4)",
-  "reasoning": "テレビに隣接してinteractコマンドが使用可能になる",
-  "current_task": "task_20250120_143052",
-  "step_id": "uuid-generated-step-id"
-}
-```
-
-注: navigateコマンドは`navigate(x,z)`形式で返されます。x,y,zフィールドは後方互換性のため残されていますが、nullになります。
-
 ### ヘルスチェック
 ```
 GET /api/health

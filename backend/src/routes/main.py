@@ -4,7 +4,7 @@ Flaskのルートエンドポイントを管理
 """
 
 from flask import request, jsonify
-from command_controller import command_controller
+from services.command_controller import command_controller
 import logging
 
 logger = logging.getLogger(__name__)

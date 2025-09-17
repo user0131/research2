@@ -8,7 +8,7 @@ LLMマネージャー - 3つのLLMシステム統合
 import json
 import logging
 from typing import Dict, List
-from constants import get_tasks, get_dependencies, get_task_examples, get_available_commands, get_prompt_template, PROMPT_TEMPLATES
+from config.constants import get_tasks, get_dependencies, get_task_examples, get_available_commands, get_prompt_template, PROMPT_TEMPLATES
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class TaskStepPlannerLLM:
             task_examples = get_task_examples()
             
             # 完了済みタスク履歴を取得
-            from storage_manager import storage_manager
+            from services.storage_manager import storage_manager
             completed_tasks = self._get_completed_tasks_history()
             
             system_prompt = """
@@ -114,7 +114,7 @@ class TaskStepPlannerLLM:
     def _get_completed_tasks_history(self) -> List[Dict]:
         """完了済みタスクの履歴を取得"""
         try:
-            from storage_manager import storage_manager
+            from services.storage_manager import storage_manager
             
             # タスク完了記録を取得
             task_completions = storage_manager.get_task_completions(50)  # 最大50件
@@ -339,7 +339,7 @@ class TaskReconstructorLLM:
     def _get_task_execution_history(self, current_step: Dict, error_info: Dict) -> List[Dict]:
         """同じタスクIDの実行履歴を時系列順で取得"""
         try:
-            from storage_manager import storage_manager
+            from services.storage_manager import storage_manager
             
             # タスクIDを特定
             task_id = current_step.get('task_id') or error_info.get('task_id')
