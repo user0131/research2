@@ -3,8 +3,10 @@
 2. backendのDocker起動
 
 # 仮想空間Scene
+
 https://github.com/user-attachments/assets/f2e5a191-258e-42a3-b1bd-aaea66d79b34
 
 # AIエージェント動作例
-周辺の環境を把握した上で、
+周辺の環境を把握した上で、AIエージェントがbeckendからの指示に従い動作
+
 https://github.com/user-attachments/assets/81b18986-93a0-40a7-9543-ce5f36fa7d94
